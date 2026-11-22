@@ -23,6 +23,8 @@ jobs:
         with:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
+      # Pinned, SHA-256-checked PDFium. tauri-build copies it for the bundle, and the PDF tests load it.
+      - run: bash scripts/fetch-pdfium.sh
       - run: bash scripts/check-brand.sh
       - run: pnpm lint
       - run: pnpm typecheck
