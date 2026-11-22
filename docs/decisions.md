@@ -145,3 +145,36 @@ The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the re
 | `@biomejs/biome` (dev) | Lint | MIT OR Apache-2.0 | None |
 | `vitest` (dev) | Frontend tests | MIT | None |
 | `@types/react`, `@types/react-dom` (dev) | Types | MIT | None |
+
+## ADR-003. Storage, keychain, Air-Gap guard, and scoped paths
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+- The DB key is 32 bytes from `OsRng`, stored in the login keychain as service `KEYCHAIN_SERVICE`, account `db-key-v1`, and given to SQLCipher as a raw hex key (`PRAGMA key = "x'..'"`), which skips PBKDF2. `open_or_create` writes the key before creating the DB. A stored key that does not open the DB returns `WrongKey`. A missing key next to an existing DB returns `KeyMissing`. Neither case makes a new key.
+- Each connection sets `cipher_memory_security = ON`, `foreign_keys = ON`, and `temp_store = MEMORY`. The writer sets WAL. Each of the 4 readers sets `query_only`. Migrations are SQL files indexed by `user_version`, one transaction each. A DB newer than the app is rejected.
+- FTS5 (external content) and `vec0` get no FK cascade. Triggers on `chunks` keep both in sync on insert, update, and delete, including rows removed by the `documents -> chunks` cascade. So `delete_document` is one `DELETE FROM documents` statement, and every future chunk delete path is covered too. `doc_versions` also cascades.
+- Air-Gap defaults to ON and persists in `settings.airgap_enabled`. Any value other than `"0"` means ON. OFF allows exactly one host per purpose, matched exactly and case-insensitively. `net::Client` accepts only `https` URLs, follows no redirects, and uses no proxy, because either would reach a host the guard never checked.
+- `ScopedPath` canonicalizes the root and candidate, then requires the result to stay under the root. This resolves `..`, absolute paths, and symlinks. A symlink cycle fails as `Unresolvable`.
+
+### Allowed hosts (placeholders)
+
+| Purpose | Host |
+| --- | --- |
+| License | `license-provider.invalid` until a provider is chosen. `.invalid` never resolves. |
+| ModelDownload | `huggingface.co` |
+| UpdateCheck | Host of `brand::SITE_URL` |
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `rusqlite` 0.43 (`bundled-sqlcipher-vendored-openssl`) | SQLCipher, per ADR-001 | MIT | None at runtime |
+| `sqlite-vec` 0.1.9 | `vec0`, per ADR-001 | MIT OR Apache-2.0 | None at runtime |
+| `zeroize` | `Zeroizing` key buffers (rule 6) | MIT OR Apache-2.0 | None |
+| `rand_core` 0.9 (`os_rng`) | `OsRng` for the DB key | MIT OR Apache-2.0 | None |
+| `security-framework` 3 (macOS only) | Keychain generic password. Already a transitive dependency of rustls. Chosen over `keyring` 4, whose defaults turn on Windows and D-Bus stores. | MIT OR Apache-2.0 | None |
+| `reqwest` 0.13 (`default-features = false`, `rustls`) | The single HTTP client. Pulls `aws-lc-rs` and `rustls-platform-verifier`. No system proxy, no redirects. | MIT OR Apache-2.0 | Only through `net::Client`, behind `AirGapGuard`. |
+| `tempfile` (dev) | Test directories | MIT OR Apache-2.0 | None |
