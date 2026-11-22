@@ -85,9 +85,17 @@ impl Parser for PdfParser {
             let needs_ocr = needs_ocr(&text, &spans);
             if needs_ocr {
                 let image = render(&page, w, h)?;
-                let (t, s) = ocr::join_lines(self.ocr.recognize(&image, &self.langs)?);
-                if non_ws(&t) > non_ws(&text) {
-                    (text, spans) = (t, s);
+                // One page's OCR failure keeps that page's text layer instead of dropping the document.
+                match self.ocr.recognize(&image, &self.langs) {
+                    Ok(lines) => {
+                        let (t, s) = ocr::join_lines(lines);
+                        if non_ws(&t) > non_ws(&text) {
+                            (text, spans) = (t, s);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(page = number, error = %e, "OCR failed; keeping text layer")
+                    }
                 }
             }
             pages.push(PageInfo {
@@ -368,6 +376,26 @@ pub(crate) mod tests {
                     has_tables: false
                 }]
         );
+    }
+
+    struct FailingOcr;
+    impl OcrEngine for FailingOcr {
+        fn recognize(
+            &self,
+            _: &image::RgbaImage,
+            _: &[OcrLang],
+        ) -> Result<Vec<ocr::OcrLine>, crate::ingest::error::OcrError> {
+            Err(crate::ingest::error::OcrError::Engine("test"))
+        }
+    }
+
+    #[test]
+    fn pdf_ocr_failure_keeps_document() {
+        let gray = image::RgbaImage::from_pixel(200, 100, image::Rgba([180, 180, 180, 255]));
+        let bytes = build(&[&|_, p| image_page(p, &gray)]);
+        let doc = parse_with(&bytes, Arc::new(FailingOcr));
+        assert!(doc.units.is_empty());
+        assert!(doc.pages.len() == 1 && doc.pages[0].needs_ocr);
     }
 
     #[test]

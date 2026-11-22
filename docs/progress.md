@@ -177,4 +177,4 @@ Constraints
 - PDFium bindings are process-global, so all `PdfParser`s share one binding, and with `thread_safe` every PDFium call is serialized.
 - `cargo build` needs `scripts/fetch-pdfium.sh` first, because tauri-build copies the dylib and its licenses.
 - Page boxes are assumed unrotated and starting at (0, 0). Form XObjects are not walked for grid lines.
-- An OCR error fails the whole document rather than keeping the text layer.
+- An OCR error on a page keeps that page's text layer and logs only the page number and the fixed error message.
