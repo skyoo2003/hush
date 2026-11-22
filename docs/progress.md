@@ -156,3 +156,25 @@ Constraints
 - DOCX XML parts must be UTF-8. Text boxes merge into their enclosing paragraph, and nested tables are flattened into the enclosing cell.
 - Hangul-only UTF-16 without a BOM is not detected and falls through to CP949 or Windows-1252.
 - Word stores text boxes twice (`mc:AlternateContent` Choice and Fallback), so text-box text can appear twice in a unit. Skip `mc:Fallback` when this matters.
+
+## 2026-11-22 (PDF text layer and OCR)
+
+Done
+- Added `ingest::pdf::PdfParser` on PDFium (`pdfium-render` 0.9.6, pinned `chromium/8125` binary): one `Page(n)` unit per page with one `Span` per word, a `PageInfo` for every page (`needs_ocr`, `has_tables`), the metadata title, and `ParseError::Encrypted` for password-protected files. PDFs load from memory only.
+- Added `ingest::ocr`: the `OcrEngine` trait, `VisionOcr` (macOS Vision, accurate, ko-KR and en-US), `NoopOcr`, `default_engine()`, and `join_lines` (basic reading order, one span per line). Scanned PDF pages are rendered in memory and OCR'd; the OCR text replaces the text layer only when it has more non-whitespace chars.
+- Added `ingest::image::ImageParser` for PNG and JPEG through OCR, with decode limits (8192 px per side, 300 MiB).
+- `ParserRegistry::with_parser` adds parsers that need outside resources. `Span` offsets are now documented as `char` indices, and `bbox` as normalized, top-left origin.
+- `scripts/fetch-pdfium.sh` (SHA-256 checked, idempotent) runs in CI before the Rust checks. `tauri.conf.json` bundles the dylib as a macOS framework and its license files as resources. ADR-007 records the comparison with pure-Rust crates, thresholds, and licenses.
+- 10 new tests: 3-page text PDF with a word bbox check, scanned page detection with `NoopOcr`, grid detection, garbage PDF, reading order, bad and truncated images, image size limit, and on macOS Vision OCR on rendered text, PNG through Vision, and the scanned-PDF fallback end to end.
+
+TODO
+- Layout-aware OCR for `has_tables` pages (columns, table cells); `join_lines` only sorts rows.
+- Wire the registry (`PdfParser` with the bundled dylib path from the app's Frameworks dir, `ImageParser`, `default_engine()`) into the ingest worker under `spawn_blocking`.
+- Windows and Linux PDFium binaries and an OCR engine for them (only the macOS universal binary is fetched; `NoopOcr` elsewhere).
+- Check that `pnpm tauri build` puts the license files and the dylib where the app expects them.
+
+Constraints
+- PDFium bindings are process-global, so all `PdfParser`s share one binding, and with `thread_safe` every PDFium call is serialized.
+- `cargo build` needs `scripts/fetch-pdfium.sh` first, because tauri-build copies the dylib and its licenses.
+- Page boxes are assumed unrotated and starting at (0, 0). Form XObjects are not walked for grid lines.
+- An OCR error fails the whole document rather than keeping the text layer.
