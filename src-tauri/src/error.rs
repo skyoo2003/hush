@@ -17,6 +17,13 @@ pub enum ErrorCode {
 }
 
 impl AppError {
+    pub fn internal(message: &str) -> Self {
+        Self {
+            code: ErrorCode::Internal,
+            message: message.into(),
+        }
+    }
+
     pub fn not_implemented() -> Self {
         Self {
             code: ErrorCode::NotImplemented,

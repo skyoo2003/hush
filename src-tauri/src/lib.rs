@@ -23,6 +23,7 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::hide_window,
         commands::list_folders,
         commands::get_settings,
+        commands::set_air_gap,
         commands::get_license_status,
         commands::list_models,
         commands::export_pack,
@@ -95,6 +96,14 @@ mod tests {
         w: &WebviewWindow<MockRuntime>,
         cmd: &str,
     ) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+        invoke_with(w, cmd, tauri::ipc::InvokeBody::default())
+    }
+
+    fn invoke_with(
+        w: &WebviewWindow<MockRuntime>,
+        cmd: &str,
+        body: tauri::ipc::InvokeBody,
+    ) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
         get_ipc_response(
             w,
             InvokeRequest {
@@ -103,7 +112,7 @@ mod tests {
                 error: tauri::ipc::CallbackFn(1),
                 // Must be the app's local origin, or the request is matched as a remote URL.
                 url: "tauri://localhost".parse().unwrap(),
-                body: tauri::ipc::InvokeBody::default(),
+                body,
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
             },
@@ -137,5 +146,29 @@ mod tests {
 
         assert_not_implemented(invoke(&main, "get_settings"));
         assert_acl_denied(invoke(&main, "search"));
+        assert_acl_denied(invoke(&quick, "set_air_gap"));
+    }
+
+    #[test]
+    fn set_air_gap_persists() {
+        let app = builder(mock_builder())
+            .build(tauri::generate_context!(test = true))
+            .unwrap();
+        let (_dir, db) = storage::db::tests::temp_db();
+        let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
+        app.manage(net::Client::new(guard).unwrap());
+        app.manage(db);
+        let main = window(&app, "main");
+        let net = app.state::<net::Client>();
+        let db = app.state::<storage::db::Db>();
+        assert!(net.guard().is_enabled());
+
+        for on in [false, true] {
+            let body = tauri::ipc::InvokeBody::Json(serde_json::json!({ "enabled": on }));
+            assert!(invoke_with(&main, "set_air_gap", body).is_ok());
+            assert_eq!(net.guard().is_enabled(), on);
+            let reloaded = security::airgap::AirGapGuard::load(&db).unwrap();
+            assert_eq!(reloaded.is_enabled(), on);
+        }
     }
 }
