@@ -11,7 +11,7 @@ Official builds are signed and notarized, and published on GitHub Releases and H
 ## Build
 
 ```sh
-git clone https://github.com/skyoo2003/hush.git
+git clone https://github.com/skyoo2003/locite.git
 cd locite
 pnpm install
 bash scripts/fetch-pdfium.sh   # once; pinned PDFium, SHA-256 checked

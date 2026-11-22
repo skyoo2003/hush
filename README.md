@@ -51,7 +51,7 @@ Requirements:
 - Node.js 26 and [pnpm](https://pnpm.io/)
 
 ```sh
-git clone https://github.com/skyoo2003/hush.git
+git clone https://github.com/skyoo2003/locite.git
 cd locite
 pnpm install
 bash scripts/fetch-pdfium.sh
