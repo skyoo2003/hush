@@ -3,7 +3,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard, Once};
+use std::sync::{Mutex, MutexGuard, Once, TryLockError};
 
 use rusqlite::{ffi, Connection};
 
@@ -13,6 +13,10 @@ use super::keychain::{DbKey, KeyProvider};
 /// Index `i` upgrades the schema from `user_version` i to i + 1.
 const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
 const READERS: usize = 4;
+/// Page cache budget, in KiB. ADR-001: KNN is ~10x faster once the vector table fits in the cache.
+/// Each reader may grow to this size, and `soft_heap_limit` holds all connections together near it.
+// shortcut: fixed 1 GiB (~600k vectors, ADR-001 estimate); derive from physical RAM if 8 GB Macs swap.
+const CACHE_BUDGET_KIB: i64 = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocId(pub i64);
@@ -48,6 +52,8 @@ impl Db {
             .map(|_| {
                 let c = connect(path, key)?;
                 c.pragma_update(None, "query_only", true)?;
+                c.pragma_update(None, "cache_size", -CACHE_BUDGET_KIB)?;
+                c.pragma_update(None, "soft_heap_limit", CACHE_BUDGET_KIB * 1024)?;
                 Ok(Mutex::new(c))
             })
             .collect::<Result<_, StorageError>>()?;
@@ -62,9 +68,17 @@ impl Db {
         &self,
         f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
     ) -> Result<T, StorageError> {
-        // shortcut: round-robin can wait on a busy reader while another is idle; pick a free one if that shows up.
-        let i = self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len();
-        Ok(f(&lock(&self.readers[i]))?)
+        // Lowest free reader first, so a lone caller keeps hitting reader 0 and its warm page cache.
+        let free = self.readers.iter().find_map(|m| match m.try_lock() {
+            Ok(g) => Some(g),
+            Err(TryLockError::Poisoned(e)) => Some(e.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        });
+        let conn = free.unwrap_or_else(|| {
+            let i = self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len();
+            lock(&self.readers[i])
+        });
+        Ok(f(&conn)?)
     }
 
     pub fn write<T>(
@@ -282,6 +296,20 @@ pub(crate) mod tests {
         let w = |sql: &str| -> i64 { db.write(|c| c.query_row(sql, [], |r| r.get(0))).unwrap() };
         assert_eq!(w("PRAGMA foreign_keys"), 1);
         assert_eq!(w("PRAGMA temp_store"), 2);
+        // SQLITE_TEMP_STORE=0 at compile time would force temp files whatever the pragma says.
+        let opts: Vec<String> = db
+            .read(|c| {
+                c.prepare("PRAGMA compile_options")?
+                    .query_map([], |r| r.get(0))?
+                    .collect()
+            })
+            .unwrap();
+        assert!(!opts.iter().any(|o| o == "TEMP_STORE=0"), "{opts:?}");
+        assert_eq!(count(&db, "PRAGMA cache_size"), -CACHE_BUDGET_KIB);
+        assert_eq!(
+            count(&db, "PRAGMA soft_heap_limit"),
+            CACHE_BUDGET_KIB * 1024
+        );
         let mem: String = db
             .write(|c| c.query_row("PRAGMA cipher_memory_security", [], |r| r.get(0)))
             .unwrap();
@@ -292,6 +320,51 @@ pub(crate) mod tests {
         assert_eq!(mode, "wal");
         assert_eq!(count(&db, "PRAGMA foreign_keys"), 1);
         assert!(db.read(|c| c.execute("DELETE FROM settings", [])).is_err());
+    }
+
+    fn reader_id(db: &Db) -> usize {
+        db.read(|c| Ok(std::ptr::from_ref(c) as usize)).unwrap()
+    }
+
+    #[test]
+    fn sequential_reads_reuse_one_reader() {
+        let (_dir, db) = temp_db();
+        let first = reader_id(&db);
+        for _ in 0..READERS * 2 {
+            assert_eq!(reader_id(&db), first);
+        }
+    }
+
+    #[test]
+    fn busy_reader_does_not_block_others() {
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+        let (_dir, db) = temp_db();
+        let db = &db;
+        let (release, held) = channel::<()>();
+        let (entered, wait_entered) = channel();
+        let (done, wait_done) = channel();
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                db.read(|_| {
+                    entered.send(()).unwrap();
+                    held.recv().unwrap();
+                    Ok(())
+                })
+                .unwrap()
+            });
+            wait_entered.recv().unwrap();
+            s.spawn(move || {
+                // Round-robin would land on the held reader within READERS calls and wait.
+                for _ in 0..READERS * 2 {
+                    reader_id(db);
+                }
+                done.send(()).unwrap();
+            });
+            let r = wait_done.recv_timeout(Duration::from_secs(5));
+            release.send(()).unwrap();
+            assert!(r.is_ok(), "reads waited on the busy reader");
+        });
     }
 
     #[test]
