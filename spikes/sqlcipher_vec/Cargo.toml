@@ -1,0 +1,15 @@
+[package]
+name = "sqlcipher_vec_spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Standalone: not part of any future app workspace.
+[workspace]
+
+[dependencies]
+rusqlite = { version = "0.43.0", features = ["bundled-sqlcipher-vendored-openssl"] }
+sqlite-vec = "0.1.9"
+
+[profile.release]
+debug = false
