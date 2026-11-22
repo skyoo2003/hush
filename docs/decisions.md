@@ -424,7 +424,7 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 - The name is Locite (local + cite). `brand.rs` now holds `APP_NAME = "Locite"`, `APP_SLUG = "locite"`, and `PACK_EXT = "locitepack"`. The crate is `locite` (lib `locite_lib`), the npm package is `locite`, the dev signing variable is `LOCITE_DEV_SIGN_IDENTITY`, and the skill is `verify-locite`.
 - `BUNDLE_ID` and `KEYCHAIN_SERVICE` become `io.github.skyoo2003.locite`, a reverse-DNS ID under a domain the maintainer controls. This also removes the `.app` suffix warning from ADR-002.
 - `SITE_URL` becomes `https://skyoo2003.github.io/locite`, so the UpdateCheck host is `skyoo2003.github.io`. The old host `hush.app` was not a domain the project owned. With Air-Gap OFF, the app would have contacted whoever owned it.
-- GitHub repository URLs stay `skyoo2003/hush` until the repository is renamed.
+- The GitHub repository is renamed to `skyoo2003/locite`. GitHub redirects the old URLs.
 
 ### Consequences
 

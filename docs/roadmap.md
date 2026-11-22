@@ -29,6 +29,6 @@ Twelve weeks. The repository goes public in week 4, v1.0 ships in week 8, and we
 
 ## Decisions due before the repository goes public (week 4)
 
-- **Name.** Renamed from Hush to Locite (ADR-012). Still to do: a trademark search, and renaming the GitHub repository from `skyoo2003/hush`. See [TRADEMARK.md](../TRADEMARK.md).
+- **Name.** Renamed from Hush to Locite (ADR-012). The GitHub repository is now `skyoo2003/locite`. Still to do: a trademark search. See [TRADEMARK.md](../TRADEMARK.md).
 - **Relicensing.** Contributions come in under the DCO with no CLA, so copyright stays with each contributor, and any later relicensing or dual licensing needs every contributor's consent. Today there is one contributor. If that option should stay open, decide on a CLA before accepting outside contributions.
 - **Sponsorship accounts.** Check fees and Korean payout and tax conditions, then open the accounts and fill in `.github/FUNDING.yml` and the goals in [funding.md](funding.md).
