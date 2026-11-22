@@ -13,19 +13,16 @@ const SETTING: &str = "airgap_enabled";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetPurpose {
-    License,
     ModelDownload,
     UpdateCheck,
 }
 
 impl NetPurpose {
-    pub const ALL: [Self; 3] = [Self::License, Self::ModelDownload, Self::UpdateCheck];
+    pub const ALL: [Self; 2] = [Self::ModelDownload, Self::UpdateCheck];
 
     /// The one host this purpose may reach. Compared exactly, so subdomains do not match.
     pub fn host(self) -> &'static str {
         match self {
-            // shortcut: placeholder until the license provider is chosen; `.invalid` never resolves.
-            Self::License => "license-provider.invalid",
             Self::ModelDownload => "huggingface.co",
             Self::UpdateCheck => {
                 let rest = brand::SITE_URL.split_once("://").map_or("", |(_, r)| r);
@@ -197,7 +194,7 @@ mod tests {
         for h in hosts {
             assert!(!h.is_empty() && !h.contains(['/', ':']), "{h}");
         }
-        assert!(hosts[0] != hosts[1] && hosts[1] != hosts[2] && hosts[0] != hosts[2]);
+        assert_ne!(hosts[0], hosts[1]);
     }
 
     #[test]

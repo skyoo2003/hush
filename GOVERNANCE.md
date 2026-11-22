@@ -1,13 +1,13 @@
 # Governance
 
-Hush is a GPL-3.0-only open source project. This file says who decides what, and how.
+Locite is a free, GPL-3.0-or-later open source project funded by sponsors. This file says who decides what, and how.
 
 ## Roles
 
 - **Users** run the app and report problems through issues.
 - **Contributors** send pull requests. Anyone can contribute under the terms in [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Maintainers** review and merge pull requests, triage issues, cut releases, and enforce the [Code of Conduct](CODE_OF_CONDUCT.md).
-- **Lead maintainer** has the final say when maintainers disagree, and owns the release keys, the repository settings, and the license provider account.
+- **Lead maintainer** has the final say when maintainers disagree, and owns the release keys, the repository settings, and the sponsorship accounts.
 
 ## Maintainers
 
@@ -20,7 +20,7 @@ Hush is a GPL-3.0-only open source project. This file says who decides what, and
 ## How decisions are made
 
 1. Most changes are decided in the pull request. One maintainer approval and green CI are enough to merge.
-2. A change to an absolute rule in [CLAUDE.md](CLAUDE.md), the license, this file, or the tier model needs an issue first, with at least 7 days for comment, and approval from the lead maintainer.
+2. A change to an absolute rule in [CLAUDE.md](CLAUDE.md), the license, this file, or the funding model needs an issue first, with at least 7 days for comment, and approval from the lead maintainer.
 3. An architecture decision is recorded as an ADR in [docs/decisions.md](docs/decisions.md) in the same pull request that makes it.
 4. If maintainers cannot agree, the lead maintainer decides and writes down the reason in the issue or pull request.
 
@@ -30,13 +30,26 @@ A contributor with a steady record of reviewed, merged work can be nominated by 
 
 ## Releases
 
-Maintainers tag releases from `main` after CI passes. Every release ships its full corresponding source under GPL-3.0-only, including the code behind paid tiers.
+Maintainers tag releases from `main` after CI passes. Every release ships its full corresponding source under GPL-3.0-or-later: the source archive of the tag is uploaded with the binaries. Releases go to GitHub Releases and Homebrew only.
 
 ## License and contributions
 
-- The project is licensed under [GPL-3.0-only](LICENSE).
+- The project is licensed under [GPL-3.0-or-later](LICENSE).
 - Contributions are accepted under the same license and signed off under the [Developer Certificate of Origin](https://developercertificate.org/). There is no CLA, so copyright stays with each contributor and the project cannot be relicensed without their consent.
 - Every dependency must use a GPL-3.0-compatible license. `cargo deny check licenses` enforces this for Rust crates in CI.
+
+## Funding
+
+- Locite is free. Sponsorship never changes what the app does (absolute rule 8 in [CLAUDE.md](CLAUDE.md)).
+- Channels: GitHub Sponsors (monthly) and Buy Me a Coffee (one-time), both listed in [`.github/FUNDING.yml`](.github/FUNDING.yml).
+- Goals are public and numeric. Totals and spending are published every quarter in [docs/funding.md](docs/funding.md), without sponsor personal data.
+
+## Maintenance time
+
+- Issues and pull requests are triaged once a week, in a fixed one-hour slot.
+- Every external pull request gets a review against the absolute rules before merge.
+- A security review of the week's changes runs at the end of each development week.
+- What is supported is written down in [SUPPORT.md](SUPPORT.md).
 
 ## Contact
 

@@ -1,6 +1,6 @@
 # Quick search popup
 
-From anywhere in macOS, `Cmd+Shift+Space` shows a small always-on-top Hush popup with its search field focused. Escape clears the query and hides the popup. The next time it opens, the field is empty.
+From anywhere in macOS, `Cmd+Shift+Space` shows a small always-on-top Locite popup with its search field focused. Escape clears the query and hides the popup. The next time it opens, the field is empty.
 
 ## Sub-features
 
@@ -36,4 +36,4 @@ Preconditions:
 - The first `ax.swift` call after the popup shows often returns only `AXGroup`, because WebKit builds the AX tree lazily. Poll with `ax_until` from `lib.sh`.
 - A hidden popup is missing from the AX window list entirely. Use `windows.swift` for visibility, not AX.
 - If the shortcut does nothing, check the log for `quick-search shortcut not registered` before blaming the frontend.
-- Keystrokes go to the frontmost app. If Hush is not frontmost, stop: typing would land in the user's other apps.
+- Keystrokes go to the frontmost app. If Locite is not frontmost, stop: typing would land in the user's other apps.

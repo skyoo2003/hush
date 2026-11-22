@@ -1,4 +1,4 @@
-//! IPC entry points. Order inside each command: capability check, service call, AppError mapping.
+//! IPC entry points. Order inside each command: service call, then AppError mapping.
 //! Which window may call which command is decided by `capabilities/*.json` (Tauri ACL).
 
 use serde::Serialize;
@@ -53,7 +53,6 @@ pub fn get_settings(net: State<'_, net::Client>) -> Settings {
     }
 }
 
-/// Not tier-gated: Air-Gap is a safety feature (rule 10).
 #[tauri::command]
 pub fn set_air_gap(
     enabled: bool,
@@ -63,11 +62,6 @@ pub fn set_air_gap(
     net.guard()
         .set_enabled(&db, enabled)
         .map_err(|_| AppError::internal("failed to save setting"))
-}
-
-#[tauri::command]
-pub fn get_license_status() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
 }
 
 #[tauri::command]

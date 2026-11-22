@@ -4,13 +4,13 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 
-use hush_lib::ingest::chunker::{chunk, CharApprox, ChunkerConfig, TokenCounter};
-use hush_lib::ingest::image::{ImageParser, JPEG_MAGIC, PNG_MAGIC};
-use hush_lib::ingest::ocr::{self, OcrEngine};
-use hush_lib::ingest::parser::ParserRegistry;
-use hush_lib::ingest::pdf::{PdfParser, PDF_MAGIC};
-use hush_lib::security::paths::ScopedPath;
-use hush_lib::storage::db::DocId;
+use locite_lib::ingest::chunker::{chunk, CharApprox, ChunkerConfig, TokenCounter};
+use locite_lib::ingest::image::{ImageParser, JPEG_MAGIC, PNG_MAGIC};
+use locite_lib::ingest::ocr::{self, OcrEngine};
+use locite_lib::ingest::parser::ParserRegistry;
+use locite_lib::ingest::pdf::{PdfParser, PDF_MAGIC};
+use locite_lib::security::paths::ScopedPath;
+use locite_lib::storage::db::DocId;
 
 const PDFIUM: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),

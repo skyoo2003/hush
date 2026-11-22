@@ -1,12 +1,12 @@
 [package]
-name = "hush"
+name = "locite"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-only"
+license = "GPL-3.0-or-later"
 publish = false
 
 [lib]
-name = "hush_lib"
+name = "locite_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

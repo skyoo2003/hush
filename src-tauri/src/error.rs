@@ -13,7 +13,6 @@ pub struct AppError {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    UpgradeRequired,
     NotImplemented,
     Internal,
 }
@@ -46,8 +45,8 @@ mod tests {
             serde_json::json!({"code": "not_implemented", "message": "not implemented"})
         );
         assert_eq!(
-            serde_json::to_value(ErrorCode::UpgradeRequired).unwrap(),
-            "upgrade_required"
+            serde_json::to_value(ErrorCode::Internal).unwrap(),
+            "internal"
         );
     }
 }

@@ -6,10 +6,11 @@ cd "$(dirname "$0")/.."
 BRAND=src-tauri/src/brand.rs
 TARGETS=(src-tauri/src src src-tauri/capabilities index.html)
 
-# Value of `pub const NAME: &str = "value";` (first string literal on the line; for arrays, every literal).
+# String literals of `pub const NAME ... ;`, which may span lines (rustfmt wraps long arrays).
 values() {
   local v
-  v=$(grep -E "^pub const $1:" "$BRAND" | grep -oE '"[^"]*"' | tr -d '"') || true
+  v=$(awk -v n="$1" '$0 ~ "^pub const " n ":" {on=1} on {print} on && /;/ {exit}' "$BRAND" |
+    grep -oE '"[^"]*"' | tr -d '"') || true
   # An empty result would make the check pass vacuously.
   [ -n "$v" ] || { echo "check-brand: no value for $1 in $BRAND" >&2; exit 2; }
   echo "$v"
@@ -20,17 +21,22 @@ scan() { # scan <grep flags...> -e <pattern>
   hits+=$(grep -rnI "$@" "${TARGETS[@]}" | grep -vE "^($BRAND|src/brand\.ts):")$'\n' || true
 }
 
+# `vals=$(values ...) || exit 2`: an exit inside $(...) alone would not stop the script.
 for name in APP_NAME APP_SLUG; do
-  for v in $(values "$name"); do scan -w -F -e "$v"; done
+  vals=$(values "$name") || exit 2
+  for v in $vals; do scan -w -F -e "$v"; done
 done
 for name in BUNDLE_ID KEYCHAIN_SERVICE SITE_URL SPONSOR_URLS; do
-  for v in $(values "$name"); do scan -F -e "$v"; done
+  vals=$(values "$name") || exit 2
+  for v in $vals; do scan -F -e "$v"; done
 done
-for v in $(values SITE_URL); do
+vals=$(values SITE_URL) || exit 2
+for v in $vals; do
   host=${v#*://}
   scan -F -e "${host%%/*}"
 done
-for v in $(values PACK_EXT); do
+vals=$(values PACK_EXT) || exit 2
+for v in $vals; do
   scan -F -e ".$v" -e "\"$v\""
 done
 

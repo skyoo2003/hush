@@ -9,7 +9,8 @@
 ## Checklist
 
 - [ ] Follows every absolute rule in `CLAUDE.md` (no network egress of document data, `ScopedPath` reads, single encrypted DB, no private data in logs).
-- [ ] Tests are in this change. A tier-gated feature tests rejection on Free and acceptance on permitted tiers.
+- [ ] Tests are in this change.
+- [ ] Adds no feature lock, usage limit, payment or license code, or telemetry.
 - [ ] CI checks pass locally, including `cargo deny check licenses`.
 - [ ] New dependencies are recorded in `docs/decisions.md` with reason, license, and network use, and the license is GPL-3.0-compatible.
 - [ ] Every commit is signed off (`git commit -s`) under the DCO.

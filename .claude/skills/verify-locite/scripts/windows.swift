@@ -1,5 +1,5 @@
 // Usage: swift windows.swift <pid>
-// Prints "<label> <onscreen 0|1> <CGWindowID> <width>x<height>" for Hush's two app windows.
+// Prints "<label> <onscreen 0|1> <CGWindowID> <width>x<height>" for Locite's two app windows.
 // Labels come from tauri.conf.json: quick-search is the always-on-top one (layer > 0).
 import CoreGraphics
 guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else {

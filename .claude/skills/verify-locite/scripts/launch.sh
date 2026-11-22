@@ -4,7 +4,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-# Hush has no per-instance data dir: a second copy would share the real DB, keychain key and shortcut.
+# Locite has no per-instance data dir: a second copy would share the real DB, keychain key and shortcut.
 if pgrep -x "$APP_SLUG" >/dev/null; then
   die "refusing: $APP_SLUG already running (pid $(pgrep -x "$APP_SLUG" | tr '\n' ' ')). Ask the user to quit it."
 fi
@@ -19,7 +19,7 @@ mkdir -p "$dir"
 ln -sfn "$dir" "$RUN"
 mkdir -p "$LOG_DIR"; touch "$LOG"
 wc -l < "$LOG" | tr -d ' ' > "$dir/log-start"
-# dev-sign.sh re-signs with $HUSH_DEV_SIGN_IDENTITY (if set) so the keychain stops re-prompting, then execs.
+# dev-sign.sh re-signs with $LOCITE_DEV_SIGN_IDENTITY (if set) so the keychain stops re-prompting, then execs.
 "$ROOT/scripts/dev-sign.sh" "$BIN" > "$dir/stdout.txt" 2>&1 &
 echo $! > "$dir/pid"
 

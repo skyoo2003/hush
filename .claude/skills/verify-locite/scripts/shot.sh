@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Capture one Hush window (not the whole screen) into the current run dir.
+# Capture one Locite window (not the whole screen) into the current run dir.
 # Usage: shot.sh <main|quick-search> <name>   -> .verify/current/<name>.png
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"

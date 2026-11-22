@@ -1514,45 +1514,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
-name = "hush"
-version = "0.1.0"
-dependencies = [
- "encoding_rs",
- "flate2",
- "image",
- "objc2",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-foundation",
- "objc2-vision",
- "pdfium-render",
- "proptest",
- "pulldown-cmark",
- "quick-xml",
- "rand_core 0.9.5",
- "reqwest",
- "rusqlite",
- "security-framework",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlite-vec",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "ts-rs",
- "unicode-segmentation",
- "zeroize",
- "zip",
-]
-
-[[package]]
 name = "hybrid-array"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2190,6 +2151,45 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
+
+[[package]]
+name = "locite"
+version = "0.1.0"
+dependencies = [
+ "encoding_rs",
+ "flate2",
+ "image",
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "objc2-vision",
+ "pdfium-render",
+ "proptest",
+ "pulldown-cmark",
+ "quick-xml",
+ "rand_core 0.9.5",
+ "reqwest",
+ "rusqlite",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlite-vec",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "ts-rs",
+ "unicode-segmentation",
+ "zeroize",
+ "zip",
+]
 
 [[package]]
 name = "lock_api"

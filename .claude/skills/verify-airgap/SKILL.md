@@ -1,6 +1,6 @@
 ---
 name: verify-airgap
-description: Model-check Hush's Air-Gap promise (no request leaves while Air-Gap is ON, and ON survives a relaunch) with TLA+ over every interleaving of toggles, requests, DB-write failures, and crashes. Use it when a change touches AirGapGuard, net::Client::get, set_air_gap, Db::set_setting / Db::setting, startup guard loading in lib.rs, or makes set_air_gap async or adds another caller of set_enabled.
+description: Model-check Locite's Air-Gap promise (no request leaves while Air-Gap is ON, and ON survives a relaunch) with TLA+ over every interleaving of toggles, requests, DB-write failures, and crashes. Use it when a change touches AirGapGuard, net::Client::get, set_air_gap, Db::set_setting / Db::setting, startup guard loading in lib.rs, or makes set_air_gap async or adds another caller of set_enabled.
 ---
 
 # Verify the Air-Gap model
@@ -44,7 +44,7 @@ Look for these changes in the diff: a new caller of `set_enabled`, `begin`, or `
 verification/airgap/run.sh        # about 6 s; -v also prints each counterexample
 ```
 
-It needs Java 11 or later. The first run downloads `tla2tools.jar` v1.7.4 into `~/.cache/hush-tla/` and checks its SHA-256. The script checks each invariant separately on `AirGap.cfg`.
+It needs Java 11 or later. The first run downloads `tla2tools.jar` v1.7.4 into `~/.cache/locite-tla/` and checks its SHA-256. The script checks each invariant separately on `AirGap.cfg`.
 
 Bounds: 3 toggles with any ON/OFF values, 2 requests, 2 relaunches, and any starting row (`none`, `"0"`, `"1"`). Each row of output is `PASS` or `FAIL`, followed by `ok` when it matches the `EXPECTED` table in `run.sh`. Exit code 0 means everything matched.
 

@@ -1,6 +1,5 @@
 pub mod brand;
 pub mod commands;
-pub mod entitlement;
 pub mod error;
 pub mod ingest;
 pub mod net;
@@ -27,7 +26,6 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::list_folders,
         commands::get_settings,
         commands::set_air_gap,
-        commands::get_license_status,
         commands::list_models,
         commands::export_pack,
     ])

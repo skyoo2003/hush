@@ -6,7 +6,7 @@ set -eu
 
 TLA_VERSION=1.7.4
 TLA_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
-JAR="${XDG_CACHE_HOME:-$HOME/.cache}/hush-tla/tla2tools-$TLA_VERSION.jar"
+JAR="${XDG_CACHE_HOME:-$HOME/.cache}/locite-tla/tla2tools-$TLA_VERSION.jar"
 
 # config:invariant:expected. A FAIL here would be a known finding, not a pass.
 EXPECTED="
