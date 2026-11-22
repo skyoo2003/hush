@@ -223,3 +223,28 @@ The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the re
 | Crate | Reason | License | Network |
 | --- | --- | --- | --- |
 | `tauri-plugin-global-shortcut` 2.4 (pulls `global-hotkey` 0.8) | System-wide shortcut for `quick-search` | MIT OR Apache-2.0 | None |
+
+## ADR-005. GPL-3.0-only license and dependency license check
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+The project is licensed GPL-3.0-only. Contributions are accepted under the DCO with no CLA. `cargo deny check licenses` runs in CI against an allowlist in `src-tauri/deny.toml`.
+
+### Reasons
+
+- `-only` rather than `-or-later`, so a future GPL version does not apply without a deliberate decision.
+- DCO rather than a CLA keeps contributing simple. The cost is that relicensing needs every contributor's consent.
+- The allowlist holds only licenses that are compatible with GPL-3.0: 0BSD, Apache-2.0 (with or without LLVM-exception), BSD-3-Clause, blessing (SQLite), CC0-1.0, CDLA-Permissive-2.0, GPL-3.0-only, ISC, MIT, MIT-0, MPL-2.0, Unicode-3.0, Unlicense, WTFPL, and Zlib. `blessing` and `WTFPL` come from `sqlcipher-src`. Static OpenSSL 3.x is Apache-2.0.
+- Paid tiers stay compatible with the GPL. The binaries and the subscription are sold, and the source is published. Anyone can build a copy with the license check removed, so the subscription pays for convenience, signed builds, and updates, not for access.
+
+### Tool
+
+`cargo-deny` (MIT OR Apache-2.0) runs only in CI through `EmbarkStudios/cargo-deny-action@v2` on Linux, because the action needs Docker. It is not a crate dependency and ships nothing. `check licenses` reads local `cargo metadata` and makes no network requests beyond the CI fetch of the crate index.
+
+### Known gaps
+
+- npm packages are not checked automatically. A manual `pnpm licenses list` on 2026-11-22 found only Apache-2.0, BSD-3-Clause, ISC, MIT, and MPL-2.0.
+- Source files carry no SPDX headers.

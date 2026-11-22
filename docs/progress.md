@@ -83,3 +83,21 @@ TODO
 Constraints
 - Quantization recall was measured on random vectors only.
 - The 1 GiB cache budget is fixed and not derived from physical RAM.
+
+## 2026-11-22 (open source governance)
+
+Done
+- Licensed the project GPL-3.0-only: `LICENSE`, plus `license` in `src-tauri/Cargo.toml` and `package.json` (ADR-005).
+- Added `GOVERNANCE.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `.github/CODEOWNERS`, issue forms, and a PR template.
+- Added `src-tauri/deny.toml` and a `licenses` CI job that runs `cargo deny check licenses`. It passes locally.
+- Added an "Open source governance" section to `CLAUDE.md`.
+
+TODO
+- Add a private conduct contact address to `GOVERNANCE.md`.
+- Enable private vulnerability reporting in the GitHub repository settings, and add branch protection on `main` (required CI, CODEOWNERS review).
+- Decide whether to enforce the DCO sign-off with a CI check or the GitHub DCO app.
+- Add a README.
+
+Constraints
+- npm dependency licenses are checked by hand only.
+- Earlier commits have no DCO sign-off.
