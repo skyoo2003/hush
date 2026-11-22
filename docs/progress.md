@@ -139,3 +139,20 @@ TODO
 Constraints
 - Verification drives the user's real data dir and login keychain. There is no isolated instance: a fake `HOME` makes macOS offer to reset the login keychain.
 - The `launch.sh` keychain-prompt timeout path was not exercised end to end.
+
+## 2026-11-22 (document parsers)
+
+Done
+- Added `ingest::parser`: the `Parser` trait, `ParserRegistry` (extension dispatch plus magic-prefix check), and TXT, Markdown, and DOCX parsers producing `ParsedDocument` with `Line` or `Section` locators. Replaced the empty `IngestError` with `ParseError`.
+- Guards: a 200 MiB file cap (stat plus capped read), a DOCX decompressed-size budget that ignores declared sizes, and errors instead of panics on corrupt zip or XML.
+- 11 fixture tests build their files in temp dirs: UTF-8 BOM, CP949, UTF-16LE with and without a BOM, Markdown heading paths and tables, DOCX headings and tables, localized heading style IDs, corrupt and truncated DOCX, a zip bomb, an oversized sparse file, and registry dispatch.
+
+TODO
+- PDF and image parsers (they fill `Span` and `Page`/`Image` locators).
+- Chunking `ParsedDocument` into `Vec<Chunk>`, and calling the registry from a `spawn_blocking` worker.
+
+Constraints
+- DOCX `docProps/core.xml` dates are ignored. Created and modified come from the file system.
+- DOCX XML parts must be UTF-8. Text boxes merge into their enclosing paragraph, and nested tables are flattened into the enclosing cell.
+- Hangul-only UTF-16 without a BOM is not detected and falls through to CP949 or Windows-1252.
+- Word stores text boxes twice (`mc:AlternateContent` Choice and Fallback), so text-box text can appear twice in a unit. Skip `mc:Fallback` when this matters.

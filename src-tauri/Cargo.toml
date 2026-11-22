@@ -27,6 +27,11 @@ zeroize = "1.9.2"
 rand_core = { version = "0.9", features = ["os_rng"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 tauri-plugin-global-shortcut = "2"
+encoding_rs = "0.8"
+quick-xml = "0.42"
+pulldown-cmark = { version = "0.13", default-features = false }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

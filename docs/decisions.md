@@ -248,3 +248,26 @@ The project is licensed GPL-3.0-only. Contributions are accepted under the DCO w
 
 - npm packages are not checked automatically. A manual `pnpm licenses list` on 2026-11-22 found only Apache-2.0, BSD-3-Clause, ISC, MIT, and MPL-2.0.
 - Source files carry no SPDX headers.
+
+## ADR-006. Document parsers: TXT, Markdown, DOCX
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+- `ingest::parser::ParserRegistry` picks a parser by lower-cased extension, then checks a magic prefix where the format has one (DOCX: `PK\x03\x04`). Unknown extensions return `UnsupportedType`, and a prefix mismatch returns `MagicMismatch`.
+- Every parser reads through one capped reader: files over 200 MiB (`MAX_FILE_BYTES`) are rejected from the stat, and the read itself is capped too, so a file that grows after the stat is still rejected. Everything stays in memory, with no temp files.
+- TXT decoding order: BOM, then BOM-less UTF-16 by a NUL-byte heuristic, then UTF-8, then CP949 (`EUC_KR` in encoding_rs), then Windows-1252. The UTF-16 check runs before UTF-8 because ASCII-only UTF-16 is also valid UTF-8.
+- DOCX parts are read against a total decompressed budget (`DocxParser::max_unzipped_bytes`, default 512 MiB). Declared zip sizes are never trusted. Headings come from `styles.xml` names ("heading N", case-insensitive), so localized style IDs such as `1` work.
+- Parse errors carry fixed messages, never paths or document text. Types that hold document text do not implement Debug.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `encoding_rs` 0.8 | BOM sniffing and CP949, UTF-16, and Windows-1252 decoding for TXT and Markdown | (Apache-2.0 OR MIT) AND BSD-3-Clause | None |
+| `pulldown-cmark` 0.13 (`default-features = false`) | Markdown events for heading sections. No `html` or `getopts`. | MIT | None |
+| `quick-xml` 0.42 (no features) | Streaming XML for DOCX `document.xml`, `styles.xml`, and `core.xml` | MIT | None |
+| `zip` 9 (`default-features = false`, `deflate-flate2`) | Reads DOCX containers. No aes, bzip2, zstd, lzma, time, or chrono. Pulls `typed-path`, `constant_time_eq`, and `nix` (fs, macOS). | MIT | None |
+| `flate2` 1 (`default-features = false`, `rust_backend`) | Pins zip's deflate to the pure-Rust `miniz_oxide` backend. Already in the tree through `png`. | MIT OR Apache-2.0 | None |
