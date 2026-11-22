@@ -112,3 +112,16 @@ TODO
 
 Constraints
 - The README describes the app as pre-alpha and macOS-only, matching the current code.
+
+## 2026-11-22 (Air-Gap formal verification)
+
+Done
+- Added a TLA+ model of Air-Gap mode (`verification/airgap/AirGap.tla`), a pinned TLC runner (`verification/airgap/run.sh`, tla2tools 1.7.4, SHA-256 checked, about 6 s), and the `verify-airgap` project skill (`.claude/skills/verify-airgap/`). The model covers `AirGapGuard::set_enabled`, `check`, and `load`; `net::Client::get`; `set_air_gap`; and `Db::set_setting`, synced at `3b1f4b2`.
+- Checked 3 invariants over 3 toggles, 2 requests, and 2 relaunches. Each was shown to fail on a broken variant. The skill caught a scratch change that dropped the DB write in `set_enabled`.
+
+TODO
+- Finding: `Client::get` checks Air-Gap once, before `send().await`. A request that passed the check while OFF still goes out after the user turns Air-Gap ON (`NoSendAfterOnAck`).
+- Latent: if `set_air_gap` becomes async, or `set_enabled` gets a second caller, overlapping toggles can leave memory ON and the DB "0". The app then relaunches OFF (`OnSurvivesRestart`, `AirGapAsync.cfg`). This was replayed on the real code with a forced pause. Serialize `set_enabled` before making the command async.
+
+Constraints
+- `run.sh` downloads tla2tools.jar from GitHub once, as a developer tool, not from the app. It needs Java 11 or later.
