@@ -1,6 +1,6 @@
 # Support
 
-Hush is maintained by one person in limited time, so support has fixed limits.
+Locite is maintained by one person in limited time, so support has fixed limits.
 
 | Area | Scope |
 | --- | --- |

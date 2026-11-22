@@ -10,11 +10,11 @@ Maintainers aim to acknowledge a report within 7 days and to agree on a disclosu
 
 ## Supported versions
 
-Hush has not had a stable release yet. Until 1.0, only the latest release and `main` receive security fixes. After 1.0, the latest release receives fixes on the macOS versions listed in [SUPPORT.md](SUPPORT.md).
+Locite has not had a stable release yet. Until 1.0, only the latest release and `main` receive security fixes. After 1.0, the latest release receives fixes on the macOS versions listed in [SUPPORT.md](SUPPORT.md).
 
 ## In scope
 
-Hush promises that documents never leave the device. These are treated as vulnerabilities:
+Locite promises that documents never leave the device. These are treated as vulnerabilities:
 
 - Any network request that carries document content, chunks, embeddings, queries, or file paths.
 - Any outbound request that bypasses `AirGapGuard` or reaches a host other than the allowed model download and update hosts, or any telemetry.

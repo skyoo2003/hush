@@ -1,6 +1,6 @@
 # Funding
 
-Hush is free. Sponsors pay for what it costs to maintain it. Sponsoring never changes what the app does.
+Locite is free. Sponsors pay for what it costs to maintain it. Sponsoring never changes what the app does.
 
 ## Channels
 

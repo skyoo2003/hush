@@ -1,4 +1,4 @@
-# Building Hush yourself
+# Building Locite yourself
 
 Official builds are signed and notarized, and published on GitHub Releases and Homebrew. You can also build and run the same code yourself. The source in this repository is the complete source of the official builds.
 
@@ -12,7 +12,7 @@ Official builds are signed and notarized, and published on GitHub Releases and H
 
 ```sh
 git clone https://github.com/skyoo2003/hush.git
-cd hush
+cd locite
 pnpm install
 bash scripts/fetch-pdfium.sh   # once; pinned PDFium, SHA-256 checked
 pnpm tauri build

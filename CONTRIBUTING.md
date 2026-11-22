@@ -1,13 +1,13 @@
 # Contributing
 
-Thanks for helping. Hush indexes private documents entirely on-device, so every change is held to the privacy rules below before anything else.
+Thanks for helping. Locite indexes private documents entirely on-device, so every change is held to the privacy rules below before anything else.
 
 ## Before you start
 
 - Read the absolute rules in [CLAUDE.md](CLAUDE.md). A pull request that breaks one is closed, however useful it is.
 - For anything larger than a bug fix, open an issue first so the design can be agreed before you write code.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-- Hush is free for everyone. Pull requests that add feature locks, usage limits, payment or license code, or telemetry are closed.
+- Locite is free for everyone. Pull requests that add feature locks, usage limits, payment or license code, or telemetry are closed.
 - Maintainers triage once a week, so expect a reply within about a week.
 
 ## Development setup
@@ -26,7 +26,7 @@ Dev builds are ad-hoc signed, so every rebuild looks like a new app to the login
 
 ```sh
 security find-identity -v -p codesigning           # pick a SHA-1 or name
-export HUSH_DEV_SIGN_IDENTITY=<SHA-1 or name>      # e.g. in ~/.zshrc
+export LOCITE_DEV_SIGN_IDENTITY=<SHA-1 or name>      # e.g. in ~/.zshrc
 ```
 
 `cargo run` and `pnpm tauri dev` start the app through `scripts/dev-sign.sh`, which re-signs it with that identity and a fixed identifier. Click "Always Allow" on the next prompt and it will not come back after rebuilds. With the variable unset, nothing changes.

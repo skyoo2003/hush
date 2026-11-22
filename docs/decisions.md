@@ -144,7 +144,7 @@ The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the re
 
 ### Bundle ID warning
 
-`com.hush.app` ends with `.app`, which Tauri warns conflicts with the `.app` bundle extension on macOS. It stays because the user chose it; decide again before release. Changing it also changes the keychain service name (`KEYCHAIN_SERVICE`) and the log and data directories.
+The original ID `com.hush.app` ended with `.app`, which Tauri warns conflicts with the `.app` bundle extension on macOS. Resolved by ADR-012, which changes it to `io.github.skyoo2003.locite`.
 
 ### New crates
 
@@ -399,7 +399,7 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 
 ### Decision
 
-- Hush is free. Every feature works the same for every user. There are no tiers, feature locks, usage limits, upgrade prompts, payment code, or license checks. Maintenance is paid for by sponsors (GitHub Sponsors monthly, Buy Me a Coffee one-time). Sponsors get only symbolic thanks.
+- Locite is free. Every feature works the same for every user. There are no tiers, feature locks, usage limits, upgrade prompts, payment code, or license checks. Maintenance is paid for by sponsors (GitHub Sponsors monthly, Buy Me a Coffee one-time). Sponsors get only symbolic thanks.
 - Removed: `entitlement.rs`, the `get_license_status` command and its permission, `ErrorCode::UpgradeRequired`, and `NetPurpose::License`. The app now has two network purposes, `ModelDownload` and `UpdateCheck`, and no telemetry.
 - The SPDX identifier is `GPL-3.0-or-later`, the usual choice, which leaves room to use a later GPL version. Every commit so far has one author, so the change needs no other consent. `deny.toml` adds `GPL-3.0-or-later` to the allowlist and keeps `GPL-3.0-only`, which is compatible for dependencies.
 - Distribution is GitHub Releases and Homebrew only, because the Mac App Store terms conflict with the GPL. Each release uploads the source archive of its tag, and the About screen shows the license notice and a source link. `docs/building.md` explains self-builds.
@@ -409,3 +409,24 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 
 - Absolute rules 2, 6, 8, and 10 in `CLAUDE.md` change. Rule 8 now forbids feature gates instead of routing them through an entitlement manager, and rule 10 says the public repository is the complete source of official builds.
 - Without a CLA, relicensing later needs every contributor's consent. Decide before the repository goes public (`docs/roadmap.md`).
+
+## ADR-012. Rename Hush to Locite
+
+- Date: 2026-11-23
+- Status: Accepted
+
+### Context
+
+"Hush" is already the name of an MIT-licensed privacy app for macOS and iOS ([oblador/hush](https://github.com/oblador/hush), "Hush Nag Blocker" on the App Store). A fork rule in `TRADEMARK.md` means little if the name itself collides.
+
+### Decision
+
+- The name is Locite (local + cite). `brand.rs` now holds `APP_NAME = "Locite"`, `APP_SLUG = "locite"`, and `PACK_EXT = "locitepack"`. The crate is `locite` (lib `locite_lib`), the npm package is `locite`, the dev signing variable is `LOCITE_DEV_SIGN_IDENTITY`, and the skill is `verify-locite`.
+- `BUNDLE_ID` and `KEYCHAIN_SERVICE` become `io.github.skyoo2003.locite`, a reverse-DNS ID under a domain the maintainer controls. This also removes the `.app` suffix warning from ADR-002.
+- `SITE_URL` becomes `https://skyoo2003.github.io/locite`, so the UpdateCheck host is `skyoo2003.github.io`. The old host `hush.app` was not a domain the project owned. With Air-Gap OFF, the app would have contacted whoever owned it.
+- GitHub repository URLs stay `skyoo2003/hush` until the repository is renamed.
+
+### Consequences
+
+- Existing dev installs start fresh. The old DB in `~/Library/Application Support/com.hush.app/`, the logs, and the keychain item `com.hush.app` are left in place, unused.
+- Anyone with `HUSH_DEV_SIGN_IDENTITY` set must rename it to `LOCITE_DEV_SIGN_IDENTITY`.

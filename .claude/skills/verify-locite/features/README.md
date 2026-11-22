@@ -1,17 +1,17 @@
-# Hush verification map
+# Locite verification map
 
-This directory is the maintained source for verifying Hush's user-facing behavior. Read this index before driving the app, then use the matching feature file as the recipe. Paths are relative to the repo root, and `S=.claude/skills/verify-hush/scripts`.
+This directory is the maintained source for verifying Locite's user-facing behavior. Read this index before driving the app, then use the matching feature file as the recipe. Paths are relative to the repo root, and `S=.claude/skills/verify-locite/scripts`.
 
 ## Baseline preconditions
 
-- No other `hush` process is running. `$S/launch.sh` refuses otherwise.
+- No other `locite` process is running. `$S/launch.sh` refuses otherwise.
 - Launch with `$S/launch.sh` (or `--no-build` when `doctor.sh` says the binary is up to date), then require `$S/doctor.sh` to print `doctor: ok`.
 - The instance runs on the user's real data dir and login keychain. There is no disposable data dir and no seed data. Read SKILL.md's "you are driving the user's real data" section before the first run.
 - The quick-search popup starts hidden (`quick-search 0` in `windows.swift`).
 
 ## Driving conventions
 
-- Prefer AX roles and accessible names (`AXSearchField desc=Search`, `AXHeading title=Hush`, `AXSwitch title=Air-Gap mode`) over coordinates. Identify windows by the `windows.swift` label, never by title (both are `Hush`).
+- Prefer AX roles and accessible names (`AXSearchField desc=Search`, `AXHeading title=Locite`, `AXSwitch title=Air-Gap mode`) over coordinates. Identify windows by the `windows.swift` label, never by title (both are `Locite`).
 - Confirm that the frontmost pid is ours before every keystroke.
 - Leave the app as you found it: popup hidden, no setting changed. Undo any mutation and prove that the undo worked too.
 

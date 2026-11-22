@@ -1,8 +1,8 @@
-# Hush — Agent Rules
+# Locite — Agent Rules
 
 ## Product in one line
 
-A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in user-chosen local folders 100% on-device, and attaches the original source (file, page, location, excerpt) to every result. Tauri v2 + Rust + React/TS. Hush is free and open source. Every feature works the same for every user, and sponsorships pay for maintenance. Supporter is a self-reported setting that only unlocks a thank-you badge and theme.
+A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in user-chosen local folders 100% on-device, and attaches the original source (file, page, location, excerpt) to every result. Tauri v2 + Rust + React/TS. Locite is free and open source. Every feature works the same for every user, and sponsorships pay for maintenance. Supporter is a self-reported setting that only unlocks a thank-you badge and theme.
 
 ## Absolute rules (if a task would require breaking one, stop and report)
 
@@ -20,7 +20,7 @@ A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in
 ## Module boundaries
 
 - ingest/: file → ParsedDocument → Vec<Chunk>. Knows nothing about the DB or models, except `ingest/pipeline.rs`, which calls `Db` methods from `storage/documents.rs` (all SQL stays in storage).
-- rag/: embedding, hybrid (vector + keyword + reranker), synthesizer (cited Q&A and guards), hushpack. Knows nothing about the file system.
+- rag/: embedding, hybrid (vector + keyword + reranker), synthesizer (cited Q&A and guards), locitepack. Knows nothing about the file system.
 - storage/: SQLCipher connection, schema and migrations, FTS, change history, keychain.
 - security/: AirGapGuard, ScopedPath, pii_guard.
 - commands.rs: IPC entry points only. Keep the order: service call → AppError conversion.

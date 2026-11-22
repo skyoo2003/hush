@@ -1,6 +1,6 @@
 # Governance
 
-Hush is a free, GPL-3.0-or-later open source project funded by sponsors. This file says who decides what, and how.
+Locite is a free, GPL-3.0-or-later open source project funded by sponsors. This file says who decides what, and how.
 
 ## Roles
 
@@ -40,7 +40,7 @@ Maintainers tag releases from `main` after CI passes. Every release ships its fu
 
 ## Funding
 
-- Hush is free. Sponsorship never changes what the app does (absolute rule 8 in [CLAUDE.md](CLAUDE.md)).
+- Locite is free. Sponsorship never changes what the app does (absolute rule 8 in [CLAUDE.md](CLAUDE.md)).
 - Channels: GitHub Sponsors (monthly) and Buy Me a Coffee (one-time), both listed in [`.github/FUNDING.yml`](.github/FUNDING.yml).
 - Goals are public and numeric. Totals and spending are published every quarter in [docs/funding.md](docs/funding.md), without sponsor personal data.
 

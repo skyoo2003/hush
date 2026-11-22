@@ -24,11 +24,11 @@ Twelve weeks. The repository goes public in week 4, v1.0 ships in week 8, and we
 | 8 | v1.0 launch | Hardening, About screen with license notice and source link (8-A), landing page, Show HN |
 | 9 | Richer search | Single-question Q&A, filter chips, PII warning and masking |
 | 10 | Compare and history | UC-05 change history, UC-01 compare view |
-| 11 | Trust and sharing | UC-06 evidence and conflicts, UC-08 `.hushpack`, UC-03 reranker |
+| 11 | Trust and sharing | UC-06 evidence and conflicts, UC-08 `.locitepack`, UC-03 reranker |
 | 12 | Document understanding | UC-02 layout OCR and jump to coordinates, UC-07 related documents |
 
 ## Decisions due before the repository goes public (week 4)
 
-- **Name.** "Hush" collides with an existing open source privacy app for macOS. See [TRADEMARK.md](../TRADEMARK.md).
+- **Name.** Renamed from Hush to Locite (ADR-012). Still to do: a trademark search, and renaming the GitHub repository from `skyoo2003/hush`. See [TRADEMARK.md](../TRADEMARK.md).
 - **Relicensing.** Contributions come in under the DCO with no CLA, so copyright stays with each contributor, and any later relicensing or dual licensing needs every contributor's consent. Today there is one contributor. If that option should stay open, decide on a CLA before accepting outside contributions.
 - **Sponsorship accounts.** Check fees and Korean payout and tax conditions, then open the accounts and fill in `.github/FUNDING.yml` and the goals in [funding.md](funding.md).
