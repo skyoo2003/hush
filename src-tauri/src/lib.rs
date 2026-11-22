@@ -10,9 +10,12 @@ pub mod storage;
 
 use std::sync::Arc;
 
-use tauri::{Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::EnvFilter;
+
+const QUICK_SEARCH_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 
 /// Shared by `run()` and the tests so both see the same handlers and setup.
 fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
@@ -37,8 +40,40 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db)?);
         app.manage(net::Client::new(guard)?);
         app.manage(db);
+        register_quick_search_shortcut(app.handle())?;
         Ok(())
     })
+}
+
+fn register_quick_search_shortcut<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    app.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, _, event| {
+                if event.state() == ShortcutState::Pressed {
+                    toggle_quick_search(app);
+                }
+            })
+            .build(),
+    )?;
+    // Another app may own the shortcut. Search still works from the main window, so do not fail startup.
+    if let Err(e) = app.global_shortcut().register(QUICK_SEARCH_SHORTCUT) {
+        tracing::warn!(error = %e, "quick-search shortcut not registered");
+    }
+    Ok(())
+}
+
+fn toggle_quick_search<R: Runtime>(app: &AppHandle<R>) {
+    let Some(w) = app.get_webview_window("quick-search") else {
+        return;
+    };
+    let res = if w.is_visible().unwrap_or(false) {
+        w.hide()
+    } else {
+        w.show().and_then(|()| w.set_focus())
+    };
+    if let Err(e) = res {
+        tracing::warn!(error = %e, "quick-search toggle failed");
+    }
 }
 
 fn open_storage(dir: &std::path::Path) -> Result<storage::db::Db, storage::error::StorageError> {
