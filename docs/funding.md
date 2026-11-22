@@ -5,7 +5,7 @@ Hush is free. Sponsors pay for what it costs to maintain it. Sponsoring never ch
 ## Channels
 
 - [GitHub Sponsors](https://github.com/sponsors/skyoo2003): the main channel, for monthly sponsorship.
-- Buy Me a Coffee: one-time support for people without a GitHub account.
+- [Buy Me a Coffee](https://buymeacoffee.com/skyoo2003): one-time support for people without a GitHub account.
 
 Both appear behind the repository's Sponsor button through [`.github/FUNDING.yml`](../.github/FUNDING.yml). Inside the app, sponsorship opens only in the external browser or as a QR code, and the app makes no network request for it.
 

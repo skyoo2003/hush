@@ -6,4 +6,4 @@ export const BUNDLE_ID = "com.hush.app" as const;
 export const KEYCHAIN_SERVICE = "com.hush.app" as const;
 export const PACK_EXT = "hushpack" as const;
 export const SITE_URL = "https://hush.app" as const;
-export const SPONSOR_URLS = ["https://hush.app/sponsor"] as const;
+export const SPONSOR_URLS = ["https://github.com/sponsors/skyoo2003","https://buymeacoffee.com/skyoo2003"] as const;

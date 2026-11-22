@@ -6,4 +6,7 @@ pub const BUNDLE_ID: &str = "com.hush.app";
 pub const KEYCHAIN_SERVICE: &str = "com.hush.app";
 pub const PACK_EXT: &str = "hushpack";
 pub const SITE_URL: &str = "https://hush.app";
-pub const SPONSOR_URLS: &[&str] = &["https://hush.app/sponsor"];
+pub const SPONSOR_URLS: &[&str] = &[
+    "https://github.com/sponsors/skyoo2003",
+    "https://buymeacoffee.com/skyoo2003",
+];

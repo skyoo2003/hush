@@ -26,7 +26,7 @@ The code in this repository is all of the code in official builds. There are no 
 
 Hush is free. Every feature works the same for everyone, with no feature locks, usage limits, or upgrade prompts. The app contains no payment or license code.
 
-Maintenance is paid for by sponsors through [GitHub Sponsors](https://github.com/sponsors/skyoo2003) (monthly) and Buy Me a Coffee (one-time). Sponsoring gets you no extra features. Thanks are symbolic: a place in the README thank-you list if you want it, an in-app badge and theme you turn on yourself, and votes on the roadmap. Funding goals, totals, and spending are published every quarter in [docs/funding.md](docs/funding.md).
+Maintenance is paid for by sponsors through [GitHub Sponsors](https://github.com/sponsors/skyoo2003) (monthly) and [Buy Me a Coffee](https://buymeacoffee.com/skyoo2003) (one-time). Sponsoring gets you no extra features. Thanks are symbolic: a place in the README thank-you list if you want it, an in-app badge and theme you turn on yourself, and votes on the roadmap. Funding goals, totals, and spending are published every quarter in [docs/funding.md](docs/funding.md).
 
 ## Install
 
