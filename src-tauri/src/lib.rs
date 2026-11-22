@@ -8,6 +8,8 @@ pub mod rag;
 pub mod security;
 pub mod storage;
 
+use std::sync::Arc;
+
 use tauri::{Manager, Runtime};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::EnvFilter;
@@ -29,8 +31,19 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         init_tracing(&app.path().app_log_dir()?)?;
         let labels: Vec<String> = app.webview_windows().into_keys().collect();
         tracing::info!(?labels, "app started");
+        let db = open_storage(&app.path().app_data_dir()?)
+            .inspect_err(|e| tracing::error!(error = %e, "storage open failed"))?;
+        let guard = Arc::new(security::airgap::AirGapGuard::load(&db)?);
+        app.manage(net::Client::new(guard)?);
+        app.manage(db);
         Ok(())
     })
+}
+
+fn open_storage(dir: &std::path::Path) -> Result<storage::db::Db, storage::error::StorageError> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{}.db", brand::APP_SLUG));
+    storage::db::open_or_create(&path, &storage::keychain::KeychainKeyProvider)
 }
 
 fn init_tracing(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
