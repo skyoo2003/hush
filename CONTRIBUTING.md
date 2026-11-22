@@ -46,7 +46,7 @@ cargo deny check licenses
 - Keep one logical change per pull request, with its tests in the same change. A tier-gated feature includes tests that it is rejected on Free and allowed on the permitted tiers.
 - Write commit messages in [Conventional Commits](https://www.conventionalcommits.org/) form with a scope, for example `feat(storage): ...` or `fix(rag): ...`.
 - Write code, comments, docs, and commit messages in English.
-- Add an entry to [docs/progress.md](docs/progress.md), and an ADR to [docs/decisions.md](docs/decisions.md) for any architecture decision.
+- Add an ADR to [docs/decisions.md](docs/decisions.md) for any architecture decision.
 - Never paste real document contents, queries, file paths, or keys into issues, pull requests, logs, or test fixtures.
 
 ## New dependencies
