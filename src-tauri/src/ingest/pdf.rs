@@ -450,9 +450,13 @@ pub(crate) mod tests {
         ));
     }
 
-    /// "Hello Quartz 2026" in 48 pt Helvetica, rendered by PDFium.
+    /// "Hello <APP_NAME> 2026" in 48 pt Helvetica, rendered by PDFium.
+    pub(crate) fn hello_text() -> String {
+        format!("Hello {} 2026", crate::brand::APP_NAME)
+    }
+
     pub(crate) fn hello_image() -> image::RgbaImage {
-        let bytes = build(&[&|d, p| text(d, p, 40.0, 700.0, "Hello Quartz 2026", 48.0)]);
+        let bytes = build(&[&|d, p| text(d, p, 40.0, 700.0, &hello_text(), 48.0)]);
         let pdfium = parser(Arc::new(NoopOcr)).pdfium;
         let doc = pdfium.load_pdf_from_byte_vec(bytes, None).unwrap();
         let page = doc.pages().get(0).unwrap();
@@ -469,7 +473,7 @@ pub(crate) mod tests {
             .recognize(&hello_image(), &[OcrLang::EnUs])
             .unwrap();
         let (joined, _) = ocr::join_lines(lines.clone());
-        assert!(joined.contains("Hello Quartz 2026"));
+        assert!(joined.contains(&hello_text()));
         for l in &lines {
             let [x0, y0, x1, y1] = l.bbox;
             assert!(l.bbox.iter().all(|v| (0.0..=1.0).contains(v)));
@@ -487,7 +491,7 @@ pub(crate) mod tests {
         assert!(doc.pages[0].needs_ocr);
         assert_eq!(doc.units.len(), 1);
         assert!(doc.units[0].locator == Locator::Page(1));
-        assert!(doc.units[0].text.contains("Quartz"));
+        assert!(doc.units[0].text.contains(crate::brand::APP_NAME));
         assert!(!doc.units[0].spans.is_empty());
     }
 }

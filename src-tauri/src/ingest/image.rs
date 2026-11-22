@@ -148,6 +148,6 @@ mod tests {
             .unwrap();
         assert_eq!(doc.units.len(), 1);
         assert!(doc.units[0].locator == Locator::Image);
-        assert!(doc.units[0].text.contains("Quartz"));
+        assert!(doc.units[0].text.contains(crate::brand::APP_NAME));
     }
 }
