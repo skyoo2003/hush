@@ -1,91 +1,147 @@
-# 결정 기록 (ADR)
+# Decision records (ADR)
 
-## ADR-001. 저장소는 SQLCipher + sqlite-vec(정적) + FTS5 단일 DB로 한다
+## ADR-001. Storage is a single DB: SQLCipher + sqlite-vec (static) + FTS5
 
-- 날짜: 2026-11-22
-- 상태: 채택
-- 근거 예제: `spikes/sqlcipher_vec/` (일회용 스파이크, 제품 코드 아님)
+- Date: 2026-11-22
+- Status: Accepted
+- Evidence: `spikes/sqlcipher_vec/` (throwaway spike, not product code)
 
-### 결정
+### Decision
 
-벡터(`vec0`), 키워드 색인(FTS5), 메타데이터를 SQLCipher 암호화 DB 파일 하나에 둔다. sqlite-vec는 `sqlite3_auto_extension`으로 정적 등록하고 dylib를 로드하지 않는다. 연결을 열 때 `PRAGMA cache_size`를 벡터 테이블 크기 이상으로 잡는다. 이 설정이 없으면 KNN이 10배 느려진다(아래 측정).
+Vectors (`vec0`), the keyword index (FTS5), and metadata live in one SQLCipher-encrypted DB file. sqlite-vec is registered statically with `sqlite3_auto_extension`; no dylib is loaded. When opening a connection, set `PRAGMA cache_size` to at least the size of the vector table. Without it, KNN is 10x slower (measured below).
 
-### 검증한 조합
+### Verified combination
 
-| 구성 요소 | 버전 |
+| Component | Version |
 | --- | --- |
 | `rusqlite` | 0.43.0, feature `bundled-sqlcipher-vendored-openssl` |
 | `libsqlite3-sys` | 0.40.0 |
 | SQLCipher | 4.20.0 community, SQLite 3.54.1 |
-| OpenSSL (`openssl-src`) | 3.6.3, 정적 빌드 |
+| OpenSSL (`openssl-src`) | 3.6.3, static build |
 | `sqlite-vec` | 0.1.9 |
-| 플랫폼 | Apple M4 (arm64), 10코어, 16 GB, macOS (Darwin 25.6.0), Rust 1.98.1 |
+| Platform | Apple M4 (arm64), 10 cores, 16 GB, macOS (Darwin 25.6.0), Rust 1.98.1 |
 
-`sqlite-vec` 크레이트는 `sqlite-vec.c`를 `SQLITE_CORE`로 컴파일하고 SQLite 본체를 포함하지 않는다. 그래서 `sqlite3_*` 심볼은 libsqlite3-sys의 SQLCipher 정적 라이브러리로 연결된다. `otool -L` 결과는 `libiconv`와 `libSystem` 두 개뿐이고, `nm`으로 보면 `sqlite3_open_v2`와 `sqlite3_vec_init`이 각각 하나씩 바이너리 안에 있다.
+The `sqlite-vec` crate compiles `sqlite-vec.c` with `SQLITE_CORE` and does not bundle SQLite itself. Its `sqlite3_*` symbols therefore link against libsqlite3-sys's static SQLCipher library. `otool -L` lists only `libiconv` and `libSystem`, and `nm` shows exactly one `sqlite3_open_v2` and one `sqlite3_vec_init` in the binary.
 
-### 검증 결과
+### Verification results
 
-`cargo run --release -- quick`으로 다시 실행할 수 있다. 각 항목은 `assert`로 확인한다.
+Rerun with `cargo run --release -- quick`. Each item is checked with `assert`.
 
-1. 암호화 DB에서 `vec0(embedding float[384])`와 `fts5(body)`를 만들고 각각 1,000건을 넣었다. 1번 행의 벡터로 KNN을 하면 10행이 나오고, 1위가 1번 행이며 거리는 0.0이다. 거리는 오름차순이다. `MATCH 'topic3'`은 100행, `MATCH 'document AND "17"'`은 1행을 돌려준다. `sqlite_compileoption_used('ENABLE_FTS5')`는 1이다. **통과.**
-2. 틀린 키와 키 없이 열면 첫 읽기에서 `SQLITE_NOTADB`(26, "file is not a database")로 실패한다. 맞는 키로 다시 열면 1,000행이 읽힌다. **통과.**
-3. 연결이 열려 있고 체크포인트 전이라 WAL이 1.86 MB인 상태에서 DB, `-wal`, `-shm` 바이트를 대소문자 무시로 검색했다. `confidential-marker`, FTS5 토큰 `confidential`, 본문 `secret body`, 평문 헤더 `sqlite format 3`은 모두 0건이다. 연결을 닫은 뒤에도 0건이다. 대조군으로 같은 데이터를 평문 DB에 넣으면 스캐너가 5건을 찾는다. **통과.**
-4. KNN 지연시간은 아래에 있다.
+1. Created `vec0(embedding float[384])` and `fts5(body)` in an encrypted DB and inserted 1,000 rows into each. KNN with row 1's vector returns 10 rows; rank 1 is row 1 with distance 0.0, and distances are ascending. `MATCH 'topic3'` returns 100 rows and `MATCH 'document AND "17"'` returns 1. `sqlite_compileoption_used('ENABLE_FTS5')` is 1. **Pass.**
+2. Opening with a wrong key or no key fails on the first read with `SQLITE_NOTADB` (26, "file is not a database"). Reopening with the right key reads 1,000 rows. **Pass.**
+3. With the connection open and no checkpoint yet (WAL at 1.86 MB), searched the DB, `-wal`, and `-shm` bytes case-insensitively. `confidential-marker`, the FTS5 token `confidential`, the body `secret body`, and the plaintext header `sqlite format 3` all have 0 hits, and still 0 after closing the connection. As a control, the same data in a plaintext DB gives the scanner 5 hits. **Pass.**
+4. KNN latency is below.
 
-### KNN top-10 지연시간
+### KNN top-10 latency
 
-측정 방법은 이렇다. 단위 정규화한 무작위 384차원 벡터를 L2 거리로 쓴다. N마다 새 DB를 만들고, 넣은 뒤 `wal_checkpoint(TRUNCATE)`를 하고, 새 연결로 연다. 워밍업 3회 뒤 20질의 × 5라운드 = 100질의를 잰다. 매 질의에서 10행이 나오는지 확인한다. 같은 바이너리를 두 번 실행했다. 두 번째 실행 p50은 첫 번째와 2% 안에서 같다. 라운드별 p50의 편차는 4% 미만이다. 측정 중 `softwareupdated`가 코어 하나를 썼다. KNN은 단일 스레드이고 코어는 10개다.
+Method: random unit-normalized 384-dim vectors with L2 distance. For each N, create a new DB, insert, run `wal_checkpoint(TRUNCATE)`, and open a fresh connection. After 3 warm-up queries, measure 20 queries × 5 rounds = 100 queries, checking that each returns 10 rows. The same binary ran twice; run 2's p50 is within 2% of run 1's. Per-round p50 varies by under 4%. `softwareupdated` used one core during measurement; KNN is single-threaded and there are 10 cores.
 
-p50 ms (실행 1 / 실행 2), p95는 실행 2 값이다.
+p50 ms (run 1 / run 2); p95 is from run 2.
 
-| N | 암호화, 기본 캐시 (2 MB) | 암호화, `cache_size=-1048576` (1 GiB) | 평문, 기본 캐시 | DB 크기 |
+| N | Encrypted, default cache (2 MB) | Encrypted, `cache_size=-1048576` (1 GiB) | Plaintext, default cache | DB size |
 | --- | --- | --- | --- | --- |
 | 1,000 | 0.16 / 0.16 (p95 0.18) | 0.18 / 0.17 (p95 0.18) | 0.28 / 0.28 | 2 MB |
 | 100,000 | 183.1 / 179.9 (p95 184.2) | 16.9 / 16.7 (p95 16.9) | 30.3 / 29.6 | 160 MB |
 | 300,000 | 545.3 / 541.5 (p95 547.9) | 50.7 / 50.6 (p95 51.2) | 90.5 / 89.9 | 478 MB |
 
-300,000건 삽입은 한 트랜잭션에서 3.4초가 걸렸다(벡터만).
+Inserting 300,000 rows took 3.4 s in one transaction (vectors only).
 
-**지연은 N에 선형이다.** sqlite-vec 0.1.9의 `vec0`에는 ANN 색인이 없어서 KNN은 모든 청크를 훑는다. 100k에서 300k로 가면 세 구성 모두 약 3배가 된다.
+**Latency is linear in N.** `vec0` in sqlite-vec 0.1.9 has no ANN index, so KNN scans every chunk. Going from 100k to 300k roughly triples latency in all three configurations.
 
-**기본 캐시에서 한계 요인은 페이지 HMAC 검증이다.** 100k 기본 캐시 구간을 macOS `sample`로 12초 잡았다(보고한 수치와는 별도 실행). 상위 스택은 `sha512_block_armv8` 56%, `pread` 12%, `vec0Filter_knn_chunks_iter`(거리 계산) 8%, `aes_v8_cbc_encrypt` 7%다. 캐시가 2 MB라서 질의마다 160 MB 전체를 디스크 캐시에서 다시 읽고 HMAC-SHA512로 검증하고 복호화한다. 캐시를 DB보다 크게 잡으면 복호화한 페이지가 메모리에 남는다. 그러면 지연이 10.7배 줄고 평문 기본 캐시보다도 빨라진다. 평문 기본 캐시는 매 질의 `pread`로 페이지를 복사하기 때문이다. 큰 캐시 구성의 한계 요인은 거리 계산과 메모리 대역폭으로 추정한다. 이 구성은 프로파일하지 않았다.
+**With the default cache, the limit is page HMAC verification.** Sampled the 100k default-cache run with macOS `sample` for 12 s (a separate run from the reported numbers). Top stacks: `sha512_block_armv8` 56%, `pread` 12%, `vec0Filter_knn_chunks_iter` (distance computation) 8%, `aes_v8_cbc_encrypt` 7%. With a 2 MB cache, every query rereads the whole 160 MB from the OS disk cache, verifies it with HMAC-SHA512, and decrypts it. A cache larger than the DB keeps decrypted pages in memory. Latency then drops 10.7x and beats even plaintext with the default cache, because plaintext still copies pages with `pread` on every query. The limit in the large-cache configuration is presumably distance computation and memory bandwidth; that configuration was not profiled.
 
-### Pro 상한 추정
+### Pro cap estimate
 
-큰 캐시 구성은 벡터 1개당 0.169 µs(50.6 ms / 300k)이고, 캐시 메모리는 벡터 1개당 약 1.6 KB(478 MB / 300k)를 쓴다. 아래 값은 측정값을 선형으로 늘린 추정이다.
+The large-cache configuration costs 0.169 µs per vector (50.6 ms / 300k) and about 1.6 KB of cache memory per vector (478 MB / 300k). The values below scale the measurements linearly.
 
-| 질의 예산 | 최대 벡터 수 | 필요한 페이지 캐시 |
+| Query budget | Max vectors | Page cache needed |
 | --- | --- | --- |
-| 50 ms | 약 300k (측정) | 약 480 MB |
-| 100 ms | 약 590k (추정) | 약 940 MB (추정) |
-| 100 ms, 기본 캐시 | 약 55k (추정) | 2 MB |
+| 50 ms | ~300k (measured) | ~480 MB |
+| 100 ms | ~590k (estimate) | ~940 MB (estimate) |
+| 100 ms, default cache | ~55k (estimate) | 2 MB |
 
-16 GB 머신에서는 지연보다 RAM이 먼저 상한을 정한다. 문서 수로 바꾸려면 문서당 청크 수가 필요하다. 문서당 20청크라고 가정하면(근거 없는 가정) 300k 벡터는 문서 15,000개다. 하이브리드 검색의 FTS5와 리랭커 시간은 이 숫자에 들어 있지 않다.
+On a 16 GB machine, RAM sets the cap before latency does. Converting to a document count needs chunks per document. Assuming 20 chunks per document (an unfounded assumption), 300k vectors is 15,000 documents. FTS5 and reranker time for hybrid search are not included in these numbers.
 
-### 결과 (영향)
+### Consequences
 
-- 연결 설정에 `cache_size`를 넣는다. 크기는 벡터 테이블 크기에 맞춰 정하고, 메모리 상한을 둔다.
-- 복호화한 페이지는 프로세스 메모리에만 있다. 파일에는 쓰지 않으므로 절대 규칙 4를 어기지 않는다. 메모리가 스왑되면 디스크에 닿지만, macOS 스왑은 기본으로 암호화된다.
-- 번들 SQLite는 `SQLITE_ENABLE_LOAD_EXTENSION=1`로 빌드되지만, 런타임에서 `load_extension`은 기본으로 꺼져 있다. 앱은 `enable_load_extension`을 호출하지 않는다.
-- "평문 캐시·임시 파일 금지"(규칙 4)에 따라, 제품 코드에서는 `PRAGMA temp_store=MEMORY`도 확인한다. 이 스파이크에서는 검사하지 않았다.
+- Add `cache_size` to the connection setup. Size it to the vector table and cap memory.
+- Decrypted pages live only in process memory and are never written to a file, so absolute rule 4 holds. Swapped memory does reach disk, but macOS encrypts swap by default.
+- The bundled SQLite is built with `SQLITE_ENABLE_LOAD_EXTENSION=1`, but `load_extension` is off at runtime by default. The app never calls `enable_load_extension`.
+- Per "no plaintext caches or temp files" (rule 4), product code also verifies `PRAGMA temp_store=MEMORY`. This spike did not check it.
 
-### 검토한 대안
+### Alternatives considered
 
-조합이 동작하므로 아래 대안은 채택하지 않는다. 비교만 남긴다.
+The combination works, so these are not adopted. The comparison is kept for reference.
 
-| 대안 | 장점 | 단점 |
+| Alternative | Pros | Cons |
 | --- | --- | --- |
-| BLOB 컬럼 + Rust 브루트포스 | 의존성 없음 | `vec0`과 같은 전체 스캔이다. 같은 HMAC 비용을 내거나, 벡터를 Rust 메모리에 따로 올려야 한다. |
-| BLOB 컬럼 + Rust HNSW | 1M 이상에서 질의가 1 ms 수준 | 색인을 메모리에 다시 만들어야 하고, 디스크에 저장하면 평문 파일 금지 규칙 때문에 DB 안에 직렬화해야 한다. 크레이트가 하나 더 늘어난다. |
-| LanceDB | 이번 범위가 아님 | 지시에 따라 검토하지 않았다. |
+| BLOB column + Rust brute force | No dependency | Same full scan as `vec0`. Pays the same HMAC cost, or needs a separate copy of the vectors in Rust memory. |
+| BLOB column + Rust HNSW | ~1 ms queries at 1M+ | The index must be rebuilt in memory, or serialized inside the DB because plaintext files are forbidden. One more crate. |
+| LanceDB | Out of scope | Not evaluated, per instructions. |
 
-다음에 측정할 것은 sqlite-vec의 `int8[384]`와 `bit[384]` 양자화다. 이 형식은 바이트 수를 4배와 32배 줄인다. 그러면 캐시 메모리와 HMAC 비용이 함께 줄어든다고 추정한다(측정하지 않음).
+Next to measure: sqlite-vec `int8[384]` and `bit[384]` quantization. These cut bytes by 4x and 32x, which should cut cache memory and HMAC cost along with them (estimate, not measured).
 
-### 새 크레이트
+### New crates
 
-| 크레이트 | 이유 | 라이선스 | 네트워크 |
+| Crate | Reason | License | Network |
 | --- | --- | --- | --- |
-| `rusqlite` | SQLite/SQLCipher 바인딩 | MIT | 런타임 없음. 빌드할 때 crates.io에서 받는다. |
-| `libsqlite3-sys` (`bundled-sqlcipher-vendored-openssl`) | SQLCipher와 OpenSSL을 정적으로 빌드 | MIT. SQLCipher community는 BSD 계열이라 고지가 필요하다. | 런타임 없음 |
-| `openssl-src` (간접) | 시스템 OpenSSL 없이 빌드 | Apache-2.0 (OpenSSL 3.x) | 런타임 없음. 소스는 크레이트에 들어 있다. |
-| `sqlite-vec` | `vec0` 가상 테이블. C 소스를 정적으로 링크한다. | MIT OR Apache-2.0 | 런타임 없음 |
+| `rusqlite` | SQLite/SQLCipher bindings | MIT | None at runtime. Downloaded from crates.io at build time. |
+| `libsqlite3-sys` (`bundled-sqlcipher-vendored-openssl`) | Builds SQLCipher and OpenSSL statically | MIT. SQLCipher community is BSD-style and needs attribution. | None at runtime |
+| `openssl-src` (transitive) | Builds without a system OpenSSL | Apache-2.0 (OpenSSL 3.x) | None at runtime. Sources ship inside the crate. |
+| `sqlite-vec` | `vec0` virtual table; links the C source statically | MIT OR Apache-2.0 | None at runtime |
+
+## ADR-002. App scaffold: Tauri v2 + React/TS + Vite, two windows with per-window ACL
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+- There are two windows, `main` and `quick-search`. Both load `index.html`, and `App.tsx` picks the UI from `getCurrentWindow().label`.
+- The future `/compare`, `/pack`, and `/viewer` views are routes inside the `main` window, not new windows. There is only one screen today, so no router yet; pick one when the routes exist.
+- The 9 IPC commands are registered through `AppManifest::commands` in `build.rs`. Each command then gets an `allow-<name>` permission, and any command a capability does not grant is rejected. `quick-search` may call only `search`, `open_source`, `copy_citation`, and `hide_window`; `main` may call only `list_folders`, `get_settings`, `get_license_status`, `list_models`, and `export_pack`. No `core:*`, fs, shell, or http permissions and no Tauri plugins.
+- Brand strings are written only in `src-tauri/src/brand.rs`. `build.rs` `include!`s that file, generates `src/brand.ts`, and syncs `productName`, `identifier`, and window titles in `tauri.conf.json`. It skips the write when content is unchanged: tauri-build watches `tauri.conf.json`, so writing every time would rebuild forever. `scripts/check-brand.sh` catches hardcoded strings, and CI runs `git diff --exit-code` to confirm the generated files match what is committed.
+- The CSP is `script-src 'self'`, and `connect-src` is only `ipc:` and `http://ipc.localhost`. Only the development `devCsp` adds `ws://localhost:1420` for Vite HMR. No `@vitejs/plugin-react`: it injects an inline refresh script that `script-src 'self'` blocks. So there is no React Fast Refresh, and an edit reloads the whole page.
+- Vite 8 transforms with Oxc instead of esbuild. The `esbuild` option is deprecated and its type has no `jsx`, so `vite.config.ts` sets JSX with `oxc: { jsx: { runtime: "automatic" } }`.
+
+### ACL findings
+
+The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the real `builder()` and `generate_context!(test = true)`, so the real capability files are used. `test = true` only drops the macOS Info.plist symbol (`_EMBED_INFO_PLIST`). Without it, the symbol collides with the one from `generate_context!()` in `run()` and the test build fails.
+
+- Calling `get_settings` from `quick-search` is rejected by the ACL with `get_settings not allowed on window "quick-search", webview "quick-search", URL: local ... referenced by: capability: main-window, permission: allow-get-settings`. It is not an AppError.
+- `search` from `quick-search` passes the ACL and returns `not_implemented`. `hide_window` returns Ok.
+- From `main`, `get_settings` passes (`not_implemented`) and `search` is rejected.
+- The test request URL is `tauri://localhost`. Tauri treats a request as `Origin::Local` only when its URL is the app's local origin; any other URL counts as remote. Capabilities allow only local origins by default.
+- In the Tauri 2.12 source (`webview/mod.rs`, `on_message`), app commands from local requests are checked against the ACL only when an app ACL manifest exists. Without `AppManifest::commands`, a local window can call every app command regardless of capabilities. So every new command must also go into `COMMANDS` in `build.rs`. A capability that references an unregistered command fails the build.
+- Check: temporarily adding `allow-get-settings` to `quick-search.json` makes the test fail; reverting makes it pass.
+- In the mock build, the setup hook does not run and the configured windows are not created, so the test creates the windows itself. No log file is written either.
+
+### Bundle ID warning
+
+`com.hush.app` ends with `.app`, which Tauri warns conflicts with the `.app` bundle extension on macOS. It stays because the user chose it; decide again before release. Changing it also changes the keychain service name (`KEYCHAIN_SERVICE`) and the log and data directories.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `tauri` 2.12 | Desktop shell, IPC, windows, ACL. The `test` feature is enabled only in dev-dependencies. | MIT OR Apache-2.0 | Makes no requests itself at runtime. No updater or http plugin. |
+| `tauri-build` 2.7 | Config and capability validation, command permission generation | MIT OR Apache-2.0 | None |
+| `serde` | IPC serialization | MIT OR Apache-2.0 | None |
+| `serde_json` | Test serialization. As a build-dependency, `preserve_order` keeps the key order of `tauri.conf.json`. | MIT OR Apache-2.0 | None |
+| `thiserror` 2 | Per-module error types | MIT OR Apache-2.0 | None |
+| `tracing` | Logging | MIT | None |
+| `tracing-subscriber` (`env-filter`, `fmt`) | Log filter (`RUST_LOG`, default `info`) and formatting | MIT | None |
+| `tracing-appender` | Daily rotating files in the app log directory, 7 kept | MIT | None |
+
+### New npm packages
+
+| Package | Reason | License | Network |
+| --- | --- | --- | --- |
+| `react`, `react-dom` 19 | UI | MIT | None |
+| `@tauri-apps/api` 2 | `invoke`, current window label | MIT OR Apache-2.0 | None. IPC only. |
+| `@tauri-apps/cli` 2 (dev) | `tauri dev`, `tauri build`, icon generation | MIT OR Apache-2.0 | Dev tool; not shipped in the app. |
+| `vite` 8 (dev) | Bundler, dev server (port 1420) | MIT | Dev server listens locally only; not shipped in the app. |
+| `typescript` 7 (dev) | Type checking (strict) | Apache-2.0 | None |
+| `@biomejs/biome` (dev) | Lint | MIT OR Apache-2.0 | None |
+| `vitest` (dev) | Frontend tests | MIT | None |
+| `@types/react`, `@types/react-dom` (dev) | Types | MIT | None |

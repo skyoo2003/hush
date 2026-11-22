@@ -1,44 +1,45 @@
 # Hush — Agent Rules
 
-## 제품 한 줄
+## Product in one line
 
-지정한 로컬 폴더 문서를 100% 온디바이스로 인덱싱·검색·요약하고, 모든 결과에 원문 출처(파일·페이지·위치·발췌)를 붙이는 Zero-Cloud RAG 데스크톱 앱. Tauri v2 + Rust + React/TS. 티어: Free / Lite / Pro(월간 구독). Supporter는 후원자 표시용 설정이며 티어가 아니다.
+A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in user-chosen local folders 100% on-device, and attaches the original source (file, page, location, excerpt) to every result. Tauri v2 + Rust + React/TS. Tiers: Free / Lite / Pro (monthly subscription). Supporter is a setting that marks sponsors; it is not a tier.
 
-## 절대 규칙 (위반이 필요하면 작업 중단 후 보고)
+## Absolute rules (if a task would require breaking one, stop and report)
 
-1. 문서 내용·청크·임베딩·질의·파일 경로를 네트워크로 보내는 코드를 작성하지 않는다.
-2. 모든 아웃바운드 HTTP는 `net::Client` 하나로만 하고, 매 요청 전 `security::airgap::AirGapGuard::check(NetPurpose)`를 호출한다. 허용 용도는 License, ModelDownload, UpdateCheck 3가지뿐이고, 용도마다 허용 호스트는 1개다. 후원은 외부 브라우저나 QR로만 처리하고 앱에서 요청하지 않는다.
-3. 파일 읽기는 `security::paths::ScopedPath`로 검증된 경로만 허용한다. 등록 폴더 밖, `..`, 심볼릭 링크 탈출은 금지다.
-4. 경로·스니펫·메타데이터·벡터·FTS 색인·변경 이력은 SQLCipher DB 하나에만 저장한다. 평문 캐시·임시 파일은 금지다.
-5. 로그에 문서 본문·스니펫·질의·파일명·키를 남기지 않는다. 식별이 필요하면 doc_id를 쓴다. 검색 횟수 같은 카운터는 남겨도 되지만, 질의 문자열은 어디에도 저장하지 않는다.
-6. 키·토큰·라이선스 키는 `Zeroizing`/`SecretBox`로만 다루고 Debug/Display를 구현하지 않는다.
-7. LLM 답변에서 인용이 없는 문장은 사용자에게 보여주지 않는다. 근거가 부족하면 「제공된 로컬 문서에서 확인되지 않음」을 반환한다.
-8. 티어 권한은 `entitlement::EntitlementManager`만 판단한다. 권한이 필요한 IPC 커맨드는 본문 첫 줄에서 `require(Capability::X)`를 호출한다. 프론트엔드의 티어 분기는 표시용이며 보안 경계가 아니다.
-9. 브랜드명·번들 ID·키체인 서비스명·파일 확장자·도메인은 `brand.rs`(Rust)와 `src/brand.ts`(빌드 시 생성) 상수로만 참조한다. 문자열 하드코딩은 금지다.
-10. 유료 티어는 기능을 더하기만 한다. 문서·폴더 수 제한, 검색 품질 차등, 안정성·안전 기능(스케줄러, PII 경고, 근거 부족 게이트, 크래시 복구)의 티어 분기는 만들지 않는다. 구독이 끝나도 사용자 데이터는 지우거나 숨기지 않는다. 자체 라이선스 서버도 만들지 않는다.
+1. Do not write code that sends document content, chunks, embeddings, queries, or file paths over the network.
+2. All outbound HTTP goes through the single `net::Client`, and every request first calls `security::airgap::AirGapGuard::check(NetPurpose)`. Only three purposes are allowed: License, ModelDownload, UpdateCheck, each with exactly one allowed host. Sponsorship is handled only through the external browser or a QR code; the app makes no requests for it.
+3. File reads are allowed only on paths validated by `security::paths::ScopedPath`. Paths outside registered folders, `..`, and symlink escapes are forbidden.
+4. Paths, snippets, metadata, vectors, the FTS index, and change history are stored only in the single SQLCipher DB. Plaintext caches and temp files are forbidden.
+5. Logs never contain document bodies, snippets, queries, file names, or keys. Use doc_id when identification is needed. Counters such as search counts may be logged, but query strings are never stored anywhere.
+6. Keys, tokens, and license keys are handled only as `Zeroizing`/`SecretBox` and never implement Debug/Display.
+7. Sentences in an LLM answer that lack a citation are never shown to the user. When evidence is insufficient, return 「제공된 로컬 문서에서 확인되지 않음」 ("Not found in the provided local documents").
+8. Only `entitlement::EntitlementManager` decides tier permissions. An IPC command that needs a permission calls `require(Capability::X)` on the first line of its body. Tier branches in the frontend are for display only and are not a security boundary.
+9. Brand name, bundle ID, keychain service name, file extension, and domain are referenced only through constants in `brand.rs` (Rust) and `src/brand.ts` (generated at build time). Hardcoding these strings is forbidden.
+10. Paid tiers only add features. Do not create tier branches for document/folder count limits, search quality, or stability and safety features (scheduler, PII warning, insufficient-evidence gate, crash recovery). When a subscription ends, user data is never deleted or hidden. Do not build an in-house license server.
 
-## 모듈 경계
+## Module boundaries
 
-- ingest/: 파일 → ParsedDocument → Vec<Chunk>. DB·모델은 모른다.
-- rag/: 임베딩, hybrid(벡터+키워드+리랭커), synthesizer(출처 Q&A와 가드), hushpack. 파일시스템은 모른다.
-- storage/: SQLCipher 연결, 스키마·마이그레이션, FTS, 변경 이력, 키체인.
-- security/: AirGapGuard, ScopedPath, pii_guard, license(라이선스 파일 검증).
-- entitlement.rs: PlanTier, TierCapabilities(기능 권한 표). 다른 모듈을 호출하지 않는 순수 로직이다.
-- commands.rs: IPC 진입점만 둔다. 권한 검사 → 서비스 호출 → AppError 변환 순서를 지킨다.
-- 모듈별 error.rs(thiserror). IPC 경계에서만 AppError { code, message }로 변환한다. 권한 부족 코드는 `upgrade_required`다.
+- ingest/: file → ParsedDocument → Vec<Chunk>. Knows nothing about the DB or models.
+- rag/: embedding, hybrid (vector + keyword + reranker), synthesizer (cited Q&A and guards), hushpack. Knows nothing about the file system.
+- storage/: SQLCipher connection, schema and migrations, FTS, change history, keychain.
+- security/: AirGapGuard, ScopedPath, pii_guard, license (license file verification).
+- entitlement.rs: PlanTier, TierCapabilities (feature permission table). Pure logic that calls no other module.
+- commands.rs: IPC entry points only. Keep the order: permission check → service call → AppError conversion.
+- Each module has its own error.rs (thiserror). Convert to AppError { code, message } only at the IPC boundary. The code for insufficient permission is `upgrade_required`.
 
-## 코딩 규칙
+## Coding rules
 
-- Rust stable, edition 2021. unwrap/expect는 테스트에서만 쓴다. unsafe는 FFI에서만 쓰고 SAFETY 주석을 단다.
-- 파싱·OCR·임베딩·리랭크·LLM은 spawn_blocking이나 전용 워커에서 돌린다. async 런타임을 막지 않는다.
-- 새 크레이트를 쓰기 전에 이유·라이선스·네트워크 사용 여부를 docs/decisions.md에 기록한다. 런타임 자동 다운로드 기능은 끄거나 다른 것으로 바꾼다.
-- IPC 타입은 Rust에서 생성한다(tauri-specta 또는 ts-rs). TS strict를 쓰고, 타입을 손으로 두 번 정의하지 않는다.
-- DB 스키마 변경은 항상 새 마이그레이션으로 한다. 이미 배포한 마이그레이션은 수정하지 않는다.
+- Rust stable, edition 2021. unwrap/expect only in tests. unsafe only for FFI, with a SAFETY comment.
+- Parsing, OCR, embedding, reranking, and LLM work run in spawn_blocking or a dedicated worker. Never block the async runtime.
+- Before using a new crate, record its reason, license, and network use in docs/decisions.md. Disable or replace any runtime auto-download feature.
+- IPC types are generated from Rust (tauri-specta or ts-rs). Use TS strict, and never define a type by hand twice.
+- DB schema changes always go in a new migration. Never modify a migration that has shipped.
 
-## 작업 방식
+## How to work
 
-- 구현 전에 입출력 구조체·에러 타입·공개 시그니처를 먼저 제시한다.
-- 기능 코드와 단위 테스트는 같은 변경에 넣는다. 티어가 필요한 기능은 Free에서 거부되고 허용 티어에서 통과하는 테스트를 포함한다.
-- 완료 전 실행: cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test && pnpm lint && pnpm typecheck && pnpm test
-- 끝나면 docs/progress.md에 날짜·한 일·TODO·제약을 추가한다.
-- 요구가 모호하거나 절대 규칙과 충돌하면, 선택지 2~3개를 제시하고 멈춘다.
+- Before implementing, present the input/output structs, error types, and public signatures.
+- Feature code and its unit tests go in the same change. A tier-gated feature includes tests that it is rejected on Free and allowed on the permitted tiers.
+- Before finishing, run: cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test && pnpm lint && pnpm typecheck && pnpm test
+- When done, append the date, what was done, TODOs, and constraints to docs/progress.md.
+- If a requirement is ambiguous or conflicts with an absolute rule, present 2–3 options and stop.
+- The project language is English: code, comments, docs, commit messages, and PRs.
