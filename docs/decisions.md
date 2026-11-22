@@ -271,3 +271,53 @@ The project is licensed GPL-3.0-only. Contributions are accepted under the DCO w
 | `quick-xml` 0.42 (no features) | Streaming XML for DOCX `document.xml`, `styles.xml`, and `core.xml` | MIT | None |
 | `zip` 9 (`default-features = false`, `deflate-flate2`) | Reads DOCX containers. No aes, bzip2, zstd, lzma, time, or chrono. Pulls `typed-path`, `constant_time_eq`, and `nix` (fs, macOS). | MIT | None |
 | `flate2` 1 (`default-features = false`, `rust_backend`) | Pins zip's deflate to the pure-Rust `miniz_oxide` backend. Already in the tree through `png`. | MIT OR Apache-2.0 | None |
+
+## ADR-007. PDF text layer with pdfium, OCR fallback
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+- `ingest::pdf::PdfParser` reads PDFs through PDFium (`pdfium-render` 0.9.6 over the pinned `bblanchon/pdfium-binaries` release `chromium/8125`). Files go through `read_capped` and are loaded from memory (`load_pdf_from_byte_vec`), never from a path, and nothing is written to disk.
+- Each page becomes one `Locator::Page(n)` unit (1-based) with one `Span` per word (a maximal run of non-whitespace chars, the union of the chars' tight bounds). `\r\n` from PDFium becomes `\n`. Pages that yield no text get no unit but always get a `PageInfo`.
+- Span conventions: `char_start..char_end` are Unicode scalar (`char`) indices into `TextUnit::text`. `bbox` is `[x0, y0, x1, y1]` normalized 0..1 with a top-left origin; PDF and Vision y coordinates (bottom-left origin) are flipped.
+- Scan detection: `needs_ocr` is set when a page has fewer than 30 non-whitespace chars (`MIN_TEXT_CHARS`), or its word boxes cover less than 0.1% of the page (`MIN_TEXT_AREA_RATIO`). A 40-char line of 8 pt text covers about 0.15% of an A4 page, so a normal page with one line is not flagged, and below 0.1% only a footer-sized string is left.
+- Table hint: `has_tables` is set when the page's path objects hold at least 3 horizontal and 3 vertical axis-aligned line segments longer than 5% of the page width or height. Rectangles count as their four edges. Form XObjects are not walked.
+- OCR fallback: a `needs_ocr` page is rendered in memory (about 2000 px wide, at most 12 MP) and passed to the `OcrEngine`. The OCR text replaces the text layer only when it has more non-whitespace chars. Rendered pixels never leave memory.
+- `ingest::ocr::OcrEngine` has two implementations: `VisionOcr` on macOS (Apple Vision `VNRecognizeTextRequest`, accurate level, language correction on, languages `ko-KR` then `en-US`, top candidate only, all on-device) and `NoopOcr` elsewhere. Lines are put into reading order top to bottom, then left to right for lines whose vertical centers overlap. Layout analysis (columns, table cells) is out of scope.
+- `ingest::image::ImageParser` handles PNG and JPEG with one registry entry per format, so each has its magic check. Decoding uses explicit formats and `image::Limits` (8192 px per side, 300 MiB of decoder allocations) against decompression bombs. One `Locator::Image` unit with one span per OCR line, or no unit when nothing is recognized.
+- PDFium bindings are process-global in `pdfium-render`: a second `bind_to_library` returns `PdfiumLibraryBindingsAlreadyInitialized`. All `PdfParser`s therefore share one `Pdfium` in a `OnceLock`, bound under a mutex on first use. With the `thread_safe` feature `Pdfium` is `Send + Sync` and every PDFium call is serialized behind a mutex, so parallel parsing of PDFs gains nothing.
+- Encrypted PDFs fail with `ParseError::Encrypted`. Other PDFium and decoder errors map to fixed-message variants.
+
+### Options compared
+
+Checked against the crate sources fetched with `cargo fetch` on 2026-11-22 (no other network use). "Not verified" marks claims taken from documentation without running code.
+
+| Option | Per-char/word boxes | Renders pages (for OCR) | Paths (grid lines) | Notes |
+| --- | --- | --- | --- | --- |
+| `pdfium-render` 0.9.6 + PDFium | Yes: `PdfPageTextChar::tight_bounds` | Yes: `render_with_config` -> `image` | Yes: path objects and segments | Chromium's PDF engine. Cost: a 15 MB universal (x86_64 + arm64) dylib per app, and a C++ parser running on untrusted files. |
+| `pdf_oxide` 0.3.78 | Yes: `TextChar::bbox`, `extract_words` | Behind the `rendering` feature (tiny-skia, system fonts) | Yes: `extract_paths`, `extract_lines`, `extract_tables` | Pure Rust, MIT OR Apache-2.0, about 450k lines and young (0.3.x). Its `ocr` and `tsa-client` features pull `ureq` and download OCR models, so they must stay off. Quality on real files not verified. |
+| `pdf-extract` 0.12 | Partly: `OutputDev::output_character` gives a transform and advance width, not glyph bounds | No | No | MIT, built on lopdf. About 100 `unwrap`/`expect`/`panic!` sites in `lib.rs`. |
+| `lopdf` 0.47 | No: `extract_text` returns a `String` | No | Content stream operators only | MIT, `forbid(unsafe_code)`. A low-level object model. |
+| `pdf` (pdf-rs) 0.10 | No text extraction API; ToUnicode lives in `font.rs` | No (a separate `pdf_render` crate, not checked) | Content operators only | MIT. |
+| `hayro` 0.9 | No text API; glyphs expose `as_unicode` via `hayro-interpret` | Yes, CPU rasterizer | Through its device trait | Apache-2.0 OR MIT, `forbid(unsafe_code)`. README: no encrypted PDFs and several unsupported features. |
+
+PDFium wins because one engine gives char bounds, rendering, and path objects, and it handles the widest range of real PDFs (not measured here). The pure-Rust stacks would need two or three crates (`pdf_oxide` for text plus `hayro` for rendering) and more of our own code. Revisit `pdf_oxide` plus `hayro` if the native dylib or its attack surface becomes the bigger cost.
+
+### PDFium binary
+
+- `scripts/fetch-pdfium.sh` downloads `pdfium-mac-univ.tgz` from release `chromium/8125` (SHA-256 `0cf06803b9a4acc489fc967a1b05990622ca1cf41fa027ff9cc89eeab9b19279`) into `src-tauri/vendor/pdfium/` (git-ignored). It is developer and CI tooling, like `verification/airgap/run.sh`; the app never downloads it.
+- `tauri.conf.json` bundles `lib/libpdfium.dylib` as a macOS framework and its license files as resources. tauri-build copies both at build time, so `cargo build` fails until the script has run.
+- Licenses in the archive: the package itself is MIT (Benoit Blanchon); PDFium is BSD-3-Clause plus Apache-2.0; bundled third-party code is abseil, highway (Apache-2.0), AGG 2.3 (permissive notice), dragonbox (Apache-2.0 with LLVM exception, or Boost 1.0), fast_float and simdutf (MIT), FreeType (FreeType License), HarfBuzz (Old MIT), ICU (Unicode-3.0), Little CMS (MIT), libjpeg-turbo (IJG plus BSD-3-Clause), OpenJPEG (BSD-2-Clause), libpng (PNG Reference Library License v2), LLVM libc (Apache-2.0 with LLVM exception), and zlib (Zlib). All are compatible with GPL-3.0-only. The FreeType License asks for credit in the documentation, which the bundled license files provide.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `pdfium-render` 0.9.6 (`default-features = false`, `pdfium_8125`, `thread_safe`, `image_025`) | PDFium bindings: text chars and bounds, path objects, rendering, metadata | MIT OR Apache-2.0 | None. Its `log` calls are WASM-only. Pulls `libloading` (ISC), `chrono`, `itertools`, `utf16string`, `vecmath`, `maybe-owned`. |
+| `image` 0.25 (`default-features = false`, `png`, `jpeg`) | PNG/JPEG decoding with limits; the RGBA buffer passed to OCR | MIT OR Apache-2.0 | None. No rayon, no other formats. Pulls `zune-jpeg` (MIT OR Apache-2.0 OR Zlib), `moxcms` and `pxfm` (BSD-3-Clause OR Apache-2.0). |
+| `objc2` 0.6, `objc2-foundation` 0.3, `objc2-core-foundation` 0.3, `objc2-core-graphics` 0.3 (macOS only, minimal features) | Objective-C runtime, `NSString`/`NSArray`, `CFData`, and `CGImage` for Vision | `objc2`, `objc2-foundation`: MIT. `objc2-core-foundation`, `objc2-core-graphics`: Zlib OR Apache-2.0 OR MIT | None. Already in the tree through Tauri. |
+| `objc2-vision` 0.3 (macOS only, `VNRecognizeTextRequest`, `VNRequestHandler`, `VNObservation`) | Apple Vision text recognition, on-device | Zlib OR Apache-2.0 OR MIT | None. Vision's recognition runs locally. |
+
+`cargo deny check licenses` passes without widening the allowlist.

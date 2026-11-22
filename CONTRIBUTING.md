@@ -14,8 +14,11 @@ You need Rust stable, Node.js 26, and pnpm. The crate currently builds only on m
 
 ```sh
 pnpm install
+bash scripts/fetch-pdfium.sh   # once; pinned PDFium, SHA-256 checked
 pnpm tauri dev
 ```
+
+PDF parsing loads a native PDFium library. `scripts/fetch-pdfium.sh` downloads the pinned build into `src-tauri/vendor/pdfium/` (git-ignored) and skips the download when it is already there. The build bundles that library, so `cargo build` fails until the script has run, and the PDF tests panic with "run scripts/fetch-pdfium.sh". The app itself never downloads it.
 
 Dev builds are ad-hoc signed, so every rebuild looks like a new app to the login keychain, and macOS asks for your password again to release the DB key. To stop that, sign dev builds with a code-signing identity you already have (an Apple Development certificate works):
 
