@@ -79,7 +79,33 @@ The combination works, so these are not adopted. The comparison is kept for refe
 | BLOB column + Rust HNSW | ~1 ms queries at 1M+ | The index must be rebuilt in memory, or serialized inside the DB because plaintext files are forbidden. One more crate. |
 | LanceDB | Out of scope | Not evaluated, per instructions. |
 
-Next to measure: sqlite-vec `int8[384]` and `bit[384]` quantization. These cut bytes by 4x and 32x, which should cut cache memory and HMAC cost along with them (estimate, not measured).
+### Quantization (measured 2026-11-22)
+
+Rerun with `cargo run --release -- quant`. One encrypted DB per N holds four `vec0` tables with the same vectors: `float[384]`, `int8[384]` via `vec_quantize_int8(v, 'unit')`, `int8[384]` pre-scaled in Rust (`round(x * 508)`, i.e. [-0.25, 0.25] → int8), and `bit[384]` via `vec_quantize_binary`. Ground truth is exact float top-10. Each config gets a fresh connection, 3 warm-up queries, then 100 timed queries; every query must return 10 rows. `bit+rerank100` takes bit top-100 and reorders it by float L2 from the float table. Three full runs; p50 varied under 4% between runs, and the float rows match the KNN table above.
+
+p50 ms (p95 in parentheses), run 3. Recall@10 is the mean over 100 queries.
+
+| N | Config | Vector bytes | Default cache | 1 GiB cache | Recall@10 |
+| --- | --- | --- | --- | --- | --- |
+| 100k | float | 154 MB | 179.8 (181.4) | 17.0 (17.1) | 1.000 |
+| 100k | int8 `'unit'` | 38.5 MB | 56.3 (56.9) | 14.7 (15.0) | 0.829 |
+| 100k | int8 pre-scaled | 38.5 MB | 56.3 (56.6) | 14.7 (14.9) | 0.964 |
+| 100k | bit | 4.8 MB | 6.8 (6.9) | 0.91 (0.93) | 0.147 |
+| 100k | bit + float rerank of 100 | 4.8 MB + float | 92.4 (100.8) | 8.0 (10.2) | 0.451 |
+| 300k | float | 461 MB | 541.8 (545.6) | 53.8 (54.6) | 1.000 |
+| 300k | int8 `'unit'` | 115 MB | 168.6 (170.9) | 44.7 (45.0) | 0.825 |
+| 300k | int8 pre-scaled | 115 MB | 168.9 (171.1) | 44.8 (45.3) | 0.970 |
+| 300k | bit | 14.4 MB | 20.7 (21.0) | 2.6 (2.6) | 0.101 |
+| 300k | bit + float rerank of 100 | 14.4 MB + float | 120.4 (128.2) | 21.9 (38.0) | 0.340 |
+
+**Recall is on random vectors, not real embeddings.** Random isotropic vectors are a hard case for quantization, so recall on real embeddings may differ in either direction. Recheck with the real embedding model before choosing.
+
+- **int8 needs scaling.** `'unit'` maps [-1, 1], but components of a 384-dim unit vector sit near ±0.05, so most of the int8 range is unused. Pre-scaling raises recall from 0.83 to 0.96–0.97 at the same latency. The scale must be calibrated on real embeddings.
+- **Cold or small cache: latency follows bytes.** With the default cache, int8 is 3.2x faster than float, close to its 4x byte reduction, because HMAC verification is the limit (see above).
+- **Warm cache: int8 saves memory, not time.** With 1 GiB, int8 is only 13–17% faster than float. A 15 s `sample` of an isolated int8 run (300k, 1 GiB, not reported) puts 90% of samples in `vec0Filter_knn_chunks_iter` (distance computation) and 7% in memmove, with no HMAC or pread. The `sqlite-vec` crate's `build.rs` does not define `SQLITE_VEC_ENABLE_NEON`, so its NEON distance functions are compiled out for both float and int8. The gain from enabling them is not measured.
+- **bit alone is not usable at this recall**, and rerank of 100 still recalls 0.34–0.45 here. The rerank p95 is 1.7x its p50 with a warm cache, presumably from float pages the bit scan never warms (not profiled).
+
+Decision: stay on `float[384]` for now. Revisit int8 (pre-scaled) when real embeddings exist. It cuts the cache needed per vector by 4x (about 300k vectors in ~120 MB of vector bytes) with recall to be confirmed.
 
 ### New crates
 
@@ -99,7 +125,7 @@ Next to measure: sqlite-vec `int8[384]` and `bit[384]` quantization. These cut b
 
 - There are two windows, `main` and `quick-search`. Both load `index.html`, and `App.tsx` picks the UI from `getCurrentWindow().label`.
 - The future `/compare`, `/pack`, and `/viewer` views are routes inside the `main` window, not new windows. There is only one screen today, so no router yet; pick one when the routes exist.
-- The 9 IPC commands are registered through `AppManifest::commands` in `build.rs`. Each command then gets an `allow-<name>` permission, and any command a capability does not grant is rejected. `quick-search` may call only `search`, `open_source`, `copy_citation`, and `hide_window`; `main` may call only `list_folders`, `get_settings`, `get_license_status`, `list_models`, and `export_pack`. No `core:*`, fs, shell, or http permissions and no Tauri plugins.
+- The 9 IPC commands are registered through `AppManifest::commands` in `build.rs`. Each command then gets an `allow-<name>` permission, and any command a capability does not grant is rejected. `quick-search` may call only `search`, `open_source`, `copy_citation`, and `hide_window`; `main` may call only `list_folders`, `get_settings`, `get_license_status`, `list_models`, and `export_pack`. No `core:*`, fs, shell, or http permissions and no Tauri plugins (ADR-004 adds `global-shortcut`, used from Rust only, with no JS permission granted).
 - Brand strings are written only in `src-tauri/src/brand.rs`. `build.rs` `include!`s that file, generates `src/brand.ts`, and syncs `productName`, `identifier`, and window titles in `tauri.conf.json`. It skips the write when content is unchanged: tauri-build watches `tauri.conf.json`, so writing every time would rebuild forever. `scripts/check-brand.sh` catches hardcoded strings, and CI runs `git diff --exit-code` to confirm the generated files match what is committed.
 - The CSP is `script-src 'self'`, and `connect-src` is only `ipc:` and `http://ipc.localhost`. Only the development `devCsp` adds `ws://localhost:1420` for Vite HMR. No `@vitejs/plugin-react`: it injects an inline refresh script that `script-src 'self'` blocks. So there is no React Fast Refresh, and an edit reloads the whole page.
 - Vite 8 transforms with Oxc instead of esbuild. The `esbuild` option is deprecated and its type has no `jsx`, so `vite.config.ts` sets JSX with `oxc: { jsx: { runtime: "automatic" } }`.
@@ -178,3 +204,22 @@ The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the re
 | `security-framework` 3 (macOS only) | Keychain generic password. Already a transitive dependency of rustls. Chosen over `keyring` 4, whose defaults turn on Windows and D-Bus stores. | MIT OR Apache-2.0 | None |
 | `reqwest` 0.13 (`default-features = false`, `rustls`) | The single HTTP client. Pulls `aws-lc-rs` and `rustls-platform-verifier`. No system proxy, no redirects. | MIT OR Apache-2.0 | Only through `net::Client`, behind `AirGapGuard`. |
 | `tempfile` (dev) | Test directories | MIT OR Apache-2.0 | None |
+
+## ADR-004. Page cache budget, reader choice, Air-Gap command, global shortcut
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+- **Cache budget.** Each reader connection sets `cache_size = -1048576` (1 GiB) and `soft_heap_limit = 1 GiB`. `cache_size` is a ceiling and SQLite allocates pages only as they are read, so a small DB costs little. `soft_heap_limit` is process-wide: once SQLite's heap nears it, the page cache recycles pages instead of growing, so all connections together stay near 1 GiB. Per ADR-001, 1 GiB holds about 590k float vectors (estimate). The writer keeps the default cache. The budget is a fixed constant; deriving it from physical RAM waits until 8 GB Macs show swapping.
+- **Reader choice.** `Db::read` takes the lowest-indexed free reader and waits on a round-robin reader only when all four are busy. A single caller therefore always gets reader 0, so one page cache stays warm instead of four caches each warming the same pages, which under `soft_heap_limit` would evict each other. Tests: sequential reads use the same connection, and a read held open does not block reads on other threads (this test fails on the old round-robin code).
+- **`temp_store`.** `PRAGMA temp_store` returns 2 (MEMORY) on every connection, and `compile_options` has no `TEMP_STORE=0`, which would force temp files whatever the pragma says. Both are asserted in `connection_pragmas`.
+- **Air-Gap command.** `set_air_gap(enabled: bool)` is a `main`-window command. It calls `AirGapGuard::set_enabled`, which persists before switching. It is not tier-gated, because Air-Gap is a safety feature (rule 10). A test invokes it through IPC and checks both the live guard and the reloaded setting. `quick-search` is denied by the ACL.
+- **Global shortcut.** `CmdOrCtrl+Shift+Space` toggles the `quick-search` window (show and focus, or hide). It is registered in Rust during setup. If another app owns the shortcut, the app logs a warning and starts anyway.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `tauri-plugin-global-shortcut` 2.4 (pulls `global-hotkey` 0.8) | System-wide shortcut for `quick-search` | MIT OR Apache-2.0 | None |
