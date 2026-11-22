@@ -25,7 +25,7 @@ TODO
 - 창별 capability로 커맨드를 나눴다. Rust 테스트가 실제 capability로 거부와 허용을 확인한다. 자세한 결과는 ADR-002에 있다.
 - `build.rs`가 `brand.rs`에서 `src/brand.ts`를 만들고 `tauri.conf.json`의 이름, 번들 ID, 창 제목을 맞춘다. `scripts/check-brand.sh`가 하드코딩을 잡는다.
 - 로그는 `~/Library/Logs/com.hush.app/`에 하루 단위로 쌓고 7개만 남긴다. 시작할 때 창 라벨만 남긴다.
-- CI(`.github/workflows/ci.yml`, macos-14)를 추가했다.
+- CI(`.github/workflows/ci.yml`, macos-15)를 추가했다. macos-14 러너는 GitHub이 거부해서("configuration not supported") 바꿨다.
 
 TODO
 - 전역 단축키로 `quick-search` 창을 띄운다.
