@@ -1,4 +1,4 @@
-//! File -> `ParsedDocument` for TXT, Markdown, and DOCX.
+//! File -> `ParsedDocument`: the registry, and the TXT, Markdown, and DOCX parsers.
 //! Sync on purpose: callers run it in `spawn_blocking`.
 
 use std::fs::File;
@@ -24,6 +24,8 @@ pub enum DocKind {
     Txt,
     Markdown,
     Docx { has_tables: bool },
+    Pdf,
+    Image,
 }
 
 // No Debug on types that hold document text: it must not reach logs.
@@ -32,6 +34,16 @@ pub struct ParsedDocument {
     pub kind: DocKind,
     pub units: Vec<TextUnit>,
     pub meta: DocMeta,
+    /// One per PDF page, including pages that yield no unit. Empty for other kinds.
+    pub pages: Vec<PageInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageInfo {
+    /// 1-based.
+    pub number: u32,
+    pub needs_ocr: bool,
+    pub has_tables: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -45,11 +57,12 @@ pub struct DocMeta {
 pub struct TextUnit {
     pub locator: Locator,
     pub text: String,
-    /// Empty for TXT/MD/DOCX; PDF only.
+    /// Empty for TXT/MD/DOCX. PDF: one per word. Image and OCR'd pages: one per line.
     pub spans: Vec<Span>,
 }
 
-/// `bbox` is normalized 0..1 of the page size; char offsets index into `TextUnit::text`.
+/// `char_start..char_end` are Unicode scalar (`char`) indices into `TextUnit::text`, not byte offsets.
+/// `bbox` is `[x0, y0, x1, y1]` normalized 0..1 of the page or image, origin at the top left.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
     pub char_start: u32,
@@ -95,6 +108,16 @@ impl ParserRegistry {
         }
     }
 
+    /// Adds a parser that needs outside resources (a PDF library, an OCR engine).
+    pub fn with_parser(
+        mut self,
+        magic: Option<&'static [u8]>,
+        parser: impl Parser + 'static,
+    ) -> Self {
+        self.parsers.push((magic, Box::new(parser)));
+        self
+    }
+
     pub fn parse(&self, path: &ScopedPath) -> Result<ParsedDocument, ParseError> {
         let ext = path
             .as_path()
@@ -124,7 +147,7 @@ impl ParserRegistry {
 }
 
 /// Reads the whole file, at most `MAX_FILE_BYTES`, plus its fs dates.
-fn read_capped(path: &ScopedPath) -> Result<(Vec<u8>, DocMeta), ParseError> {
+pub(super) fn read_capped(path: &ScopedPath) -> Result<(Vec<u8>, DocMeta), ParseError> {
     let file = File::open(path.as_path()).map_err(ParseError::Io)?;
     let md = file.metadata().map_err(ParseError::Io)?;
     if md.len() > MAX_FILE_BYTES {
@@ -198,6 +221,7 @@ impl Parser for TxtParser {
             kind: DocKind::Txt,
             units: txt_units(&decode_text(&bytes)),
             meta,
+            pages: Vec::new(),
         })
     }
 }
@@ -289,6 +313,7 @@ impl Parser for MarkdownParser {
             kind: DocKind::Markdown,
             units,
             meta,
+            pages: Vec::new(),
         })
     }
 }
@@ -369,6 +394,7 @@ impl Parser for DocxParser {
             kind: DocKind::Docx { has_tables },
             units,
             meta,
+            pages: Vec::new(),
         })
     }
 }
@@ -575,12 +601,12 @@ fn docx_units(xml: &str, styles: &[(String, u8)]) -> Result<(Vec<TextUnit>, bool
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::Write;
     use std::path::Path;
 
-    fn fixture(bytes: &[u8], name: &str) -> (tempfile::TempDir, ScopedPath) {
+    pub(crate) fn fixture(bytes: &[u8], name: &str) -> (tempfile::TempDir, ScopedPath) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(name), bytes).unwrap();
         let p = ScopedPath::new(dir.path(), Path::new(name)).unwrap();
