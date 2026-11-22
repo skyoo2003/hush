@@ -2,6 +2,7 @@ use serde::Serialize;
 
 /// IPC boundary error. Messages must never contain paths, file names, queries or document text.
 #[derive(Debug, Serialize, thiserror::Error)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[error("{code:?}: {message}")]
 pub struct AppError {
     pub code: ErrorCode,
@@ -9,6 +10,7 @@ pub struct AppError {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     UpgradeRequired,
