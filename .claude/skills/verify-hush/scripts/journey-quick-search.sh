@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Quick-search journey: global shortcut shows the popup, typing reaches the input, Escape clears and hides it.
+# Quick-search journey: global shortcut shows the popup, typing reaches the input, Escape clears and hides it,
+# and the shortcut hides a visible popup.
 # Usage: journey-quick-search.sh   Evidence -> .verify/current/quick-search.{txt,*.png}
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -39,7 +40,11 @@ sleep 1
 ax_until "$RUN/quick-search-reopen-ax.txt" "AXSearchField" || fail "search field not found after reopen"
 grep -q "value=$PROBE" "$RUN/quick-search-reopen-ax.txt" && fail "probe still in the field after Escape"
 "$SCRIPTS/shot.sh" quick-search quick-search-reopened >/dev/null
-osascript -e 'tell application "System Events" to key code 53'
+
+log "step 5: Cmd+Shift+Space while visible hides it"
+[ "$(front)" = "$P" ] || fail "$APP_SLUG is not frontmost; refusing to send the shortcut"
+osascript -e 'tell application "System Events" to key code 49 using {command down, shift down}'
 sleep 0.7
-[ "$(state)" = 0 ] || fail "popup still visible after final Escape"
-log "PASS: quick-search show/type/escape/clear"
+[ "$(state)" = 0 ] || fail "popup still visible after the shortcut toggle"
+log "  popup hidden"
+log "PASS: quick-search show/type/escape/clear/toggle"

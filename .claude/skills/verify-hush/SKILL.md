@@ -52,7 +52,8 @@ This is read-only. It checks that the recorded pid is alive, that no foreign `hu
 | Type into the focused field | `osascript -e 'tell application "System Events" to keystroke "20261122"'` |
 | Escape | `osascript -e 'tell application "System Events" to key code 53'` |
 | Window screenshot | `.claude/skills/verify-hush/scripts/shot.sh <main\|quick-search> <name>` writes `.verify/current/<name>.png` |
-| Scripted journey | `.claude/skills/verify-hush/scripts/journey-quick-search.sh` |
+| Press a control (checkbox, switch, button) | `swift .claude/skills/verify-hush/scripts/press.swift "$(cat .verify/current/pid)" AXCheckBox "Air-Gap mode"` |
+| Scripted journeys | `.claude/skills/verify-hush/scripts/journey-quick-search.sh`, `.claude/skills/verify-hush/scripts/journey-air-gap.sh` |
 
 Stable handles: the search input is `AXTextField/AXSearchField desc=Search` (`aria-label="Search"`), and the main heading is `AXHeading title=Hush`. Both windows have the title `Hush`, so identify them by size or by `windows.swift` label, never by title.
 
