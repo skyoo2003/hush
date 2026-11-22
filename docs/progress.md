@@ -178,3 +178,21 @@ Constraints
 - `cargo build` needs `scripts/fetch-pdfium.sh` first, because tauri-build copies the dylib and its licenses.
 - Page boxes are assumed unrotated and starting at (0, 0). Form XObjects are not walked for grid lines.
 - An OCR error on a page keeps that page's text layer and logs only the page number and the fixed error message.
+
+## 2026-11-22 (chunker and ingest pipeline)
+
+Done
+- Added `ingest::chunker`: block-bounded, hierarchical (paragraph, sentence, word, char) chunking with sentence-level overlap, `char` offsets into `doc_text`, per-chunk SHA-256, and line-merged bboxes (at most 8).
+- Added `ingest::hash` (stat, streaming SHA-256, `decide`) and `ingest::pipeline::process_file` (scope, stat, hash, parse, chunk, store). Parse failures set `status = 'error'`, `error_code = 'parse_failed'`.
+- Added `storage::documents` (`document_state`, `insert_pending_document`, `update_stat`, `replace_chunks`, `mark_error`) and migration 0002 (`chunks.sha256`).
+- Added `examples/chunk.rs`: `cargo run --example chunk -- <file>` prints the chunks as JSON.
+- 13 new tests, including a property test over generated Page, Section, Line, and Image documents. ADR-008 records the design and new crates.
+
+TODO
+- Replace `CharApprox` with the embedding model's tokenizer.
+- Call `process_file` from the folder scanner under `spawn_blocking`, and handle deleted files.
+- Embed chunks into `vec_chunks`.
+
+Constraints
+- The file is read twice (hash, then parse), so an edit in between indexes content newer than the stored hash.
+- `CharApprox` undercounts Hangul and CJK tokens.
