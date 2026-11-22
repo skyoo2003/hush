@@ -4,9 +4,11 @@
 
    Code steps that are one atomic step here:
    - ToggleWrite  = Db::set_setting, one statement under the writer Mutex  (storage/db.rs)
-   - ToggleStore  = enabled.store(SeqCst), then set_air_gap returns Ok     (security/airgap.rs)
-   - RequestCheck = AirGapGuard::check, one SeqCst load                    (net.rs Client::get)
-   - RequestSend  = sent.fetch_add, then reqwest send                      (net.rs Client::get)
+   - ToggleStore  = on.send_replace; an OFF toggle then returns Ok         (security/airgap.rs)
+   - ToggleDrain  = an ON toggle waits for in_flight == 0, then returns Ok (security/airgap.rs)
+   - RequestCheck = AirGapGuard::begin: in_flight += 1, then check         (net.rs Client::get)
+   - RequestSend  = reqwest send wins the select                           (net.rs Client::get)
+   - RequestCancel = turned_on wins the select; InFlight drops             (net.rs Client::get)
    - Restart      = AirGapGuard::load: ON unless the row is "0"            (lib.rs setup) *)
 EXTENDS Naturals
 
@@ -14,14 +16,14 @@ CONSTANTS
     Toggles,          \* set_air_gap calls
     Requests,         \* Client::get calls
     MaxRestarts,
-    TogglesSerialized \* TRUE: a sync #[tauri::command] runs inline on the main thread
+    TogglesSerialized \* TRUE: the AirGapGuard.toggle Mutex is held across write, store, and drain
 
 VARIABLES
     disk,     \* the "airgap_enabled" settings row: "none" (never written), "0", or "1"
     mem,      \* AirGapGuard.enabled
-    tpc,      \* per toggle: "idle" | "write" | "store" | "done"
+    tpc,      \* per toggle: "idle" | "write" | "store" | "drain" | "done"
     tval,     \* per toggle: the value the user asked for
-    rpc,      \* per request: "idle" | "checked" | "blocked" | "sent"
+    rpc,      \* per request: "idle" | "checked" (in flight) | "blocked" | "sent"
     restarts,
     uiOn,     \* what the user was last told: the result of the last set_air_gap that returned Ok
     passedWhileOn,   \* a check let a request through while the guard was ON
@@ -31,7 +33,7 @@ VARIABLES
 vars == <<disk, mem, tpc, tval, rpc, restarts, uiOn, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
 
 Load(d) == d /= "0"
-Busy(t) == tpc[t] \in {"write", "store"}
+Busy(t) == tpc[t] \in {"write", "store", "drain"}
 \* The user was told ON and no request to turn it OFF is in flight.
 UserExpectsOn == uiOn /\ \A t \in Toggles : ~(Busy(t) /\ ~tval[t])
 
@@ -67,13 +69,21 @@ ToggleWriteFails(t) ==
     /\ tpc' = [tpc EXCEPT ![t] = "done"]
     /\ UNCHANGED <<disk, mem, tval, rpc, restarts, uiOn, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
 
-\* Then it updates memory and returns Ok, so the UI shows the new mode.
+\* Then it updates memory. OFF returns Ok here, so the UI shows OFF. ON goes on to drain.
 ToggleStore(t) ==
     /\ tpc[t] = "store"
     /\ mem' = tval[t]
-    /\ uiOn' = tval[t]
-    /\ tpc' = [tpc EXCEPT ![t] = "done"]
+    /\ uiOn' = IF tval[t] THEN uiOn ELSE FALSE
+    /\ tpc' = [tpc EXCEPT ![t] = IF tval[t] THEN "drain" ELSE "done"]
     /\ UNCHANGED <<disk, tval, rpc, restarts, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
+
+\* ON returns Ok only once no request is in flight, so the UI shows ON.
+ToggleDrain(t) ==
+    /\ tpc[t] = "drain"
+    /\ \A r \in Requests : rpc[r] /= "checked"
+    /\ uiOn' = TRUE
+    /\ tpc' = [tpc EXCEPT ![t] = "done"]
+    /\ UNCHANGED <<disk, mem, tval, rpc, restarts, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
 
 \* Scheme and host checks are pure and unit-tested, so only the mode matters here.
 RequestCheck(r) ==
@@ -87,6 +97,13 @@ RequestSend(r) ==
     /\ rpc' = [rpc EXCEPT ![r] = "sent"]
     /\ sentAfterOnAck' = (sentAfterOnAck \/ UserExpectsOn)
     /\ UNCHANGED <<disk, mem, tpc, tval, restarts, uiOn, passedWhileOn, onLostOnRestart>>
+
+\* Air-Gap is ON, so turned_on resolves and the request is dropped before it leaves.
+RequestCancel(r) ==
+    /\ rpc[r] = "checked"
+    /\ mem
+    /\ rpc' = [rpc EXCEPT ![r] = "blocked"]
+    /\ UNCHANGED <<disk, mem, tpc, tval, restarts, uiOn, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
 
 \* Quit or crash at any point, then relaunch. In-flight work is gone; the DB row survives.
 Restart ==
@@ -107,8 +124,8 @@ Done ==
     /\ UNCHANGED vars
 
 Next ==
-    \/ \E t \in Toggles : ToggleStart(t) \/ ToggleWrite(t) \/ ToggleWriteFails(t) \/ ToggleStore(t)
-    \/ \E r \in Requests : RequestCheck(r) \/ RequestSend(r)
+    \/ \E t \in Toggles : ToggleStart(t) \/ ToggleWrite(t) \/ ToggleWriteFails(t) \/ ToggleStore(t) \/ ToggleDrain(t)
+    \/ \E r \in Requests : RequestCheck(r) \/ RequestSend(r) \/ RequestCancel(r)
     \/ Restart
     \/ Done
 

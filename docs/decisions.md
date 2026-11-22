@@ -347,3 +347,30 @@ PDFium wins because one engine gives char bounds, rendering, and path objects, a
 | `proptest` 1 (dev only, `default-features = false`, `std`) | Property tests over generated documents. Pulls `rand_xorshift` and `unarray` (MIT OR Apache-2.0). No fork or timeout features. | MIT OR Apache-2.0 | None |
 
 `cargo deny check licenses` passes without widening the allowlist.
+
+## ADR-009. Air-Gap ON cancels and drains in-flight requests
+
+- Date: 2026-11-23
+- Status: Accepted
+
+### Context
+
+The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mode once, before `send().await`. A request that passed while Air-Gap was OFF could still go out after `set_air_gap(true)` returned Ok. It also found that overlapping `set_enabled` calls could leave memory ON and the DB row `"0"`, so a relaunch came up OFF. Only the sync command kept that second race from happening.
+
+### Decision
+
+- `AirGapGuard` keeps the mode in a `tokio::sync::watch` channel. `Client::get` races `send()` against `turned_on()`, so turning ON drops the request future.
+- `AirGapGuard::begin` counts the request in `in_flight` before it checks the mode. `set_enabled(true)` waits on a `Condvar` until the count is 0, then returns. Any request that could have seen OFF has been cancelled or has finished before the user sees ON.
+- A `toggle` Mutex is held across the DB write, the store, and the drain, so toggles never overlap, whatever calls them.
+- Holding a lock across the whole request was rejected: a model download would block the ON toggle (and the main thread) until it finished.
+
+### Consequences
+
+- `set_enabled(true)` blocks its thread until every in-flight request reaches its next poll. A caller that holds a started `get` future without polling it would block ON forever. Only `Client::get` itself may hold an `InFlight`.
+- Reading a response body after `get` returns is not covered. Model downloads must re-check `turned_on` while they stream.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `tokio` 1 (`default-features = false`, `sync`, `macros`) | `watch` for the mode, `select!` to cancel a request. Already in the tree through reqwest and Tauri; this only adds `tokio-macros`. | MIT | None |

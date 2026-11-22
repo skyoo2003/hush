@@ -1,6 +1,8 @@
 //! Air-Gap mode. ON (the default) blocks every outbound request. OFF allows exactly one host per purpose.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+
+use tokio::sync::watch;
 
 use super::error::SecurityError;
 use crate::brand;
@@ -34,7 +36,28 @@ impl NetPurpose {
 }
 
 pub struct AirGapGuard {
-    enabled: AtomicBool,
+    /// The mode. Requests subscribe to it so that turning ON cancels them.
+    on: watch::Sender<bool>,
+    /// Serializes `set_enabled`, so the DB row and memory always end on the same toggle.
+    toggle: Mutex<()>,
+    /// Requests between `begin` and the drop of their `InFlight`.
+    in_flight: Mutex<usize>,
+    drained: Condvar,
+}
+
+/// A request that passed the guard. Dropping it lets a pending `set_enabled(true)` return.
+pub struct InFlight<'a>(&'a AirGapGuard);
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        *lock(&self.0.in_flight) -= 1;
+        self.0.drained.notify_all();
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    // Nothing panics while these are held, and the data stays valid if something did.
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl AirGapGuard {
@@ -42,19 +65,47 @@ impl AirGapGuard {
     pub fn load(db: &Db) -> Result<Self, StorageError> {
         let enabled = db.setting(SETTING)?.as_deref() != Some("0");
         Ok(Self {
-            enabled: AtomicBool::new(enabled),
+            on: watch::Sender::new(enabled),
+            toggle: Mutex::new(()),
+            in_flight: Mutex::new(0),
+            drained: Condvar::new(),
         })
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.enabled.load(Ordering::SeqCst)
+        *self.on.borrow()
     }
 
     /// Persists first, so a failed write leaves the current mode in force.
+    /// Turning ON returns only after every in-flight request has been cancelled or has finished,
+    /// so once the caller sees Ok, no request leaves until Air-Gap is turned OFF again.
     pub fn set_enabled(&self, db: &Db, on: bool) -> Result<(), StorageError> {
+        let _toggle = lock(&self.toggle);
         db.set_setting(SETTING, if on { "1" } else { "0" })?;
-        self.enabled.store(on, Ordering::SeqCst);
+        self.on.send_replace(on);
+        if on {
+            let mut n = lock(&self.in_flight);
+            while *n > 0 {
+                n = self.drained.wait(n).unwrap_or_else(PoisonError::into_inner);
+            }
+        }
         Ok(())
+    }
+
+    /// Registers the request, then checks it. Registering first is what lets `set_enabled(true)`
+    /// wait for every request that could have seen OFF. The caller must keep driving the request
+    /// to completion or drop it, and must race it against `turned_on`.
+    pub fn begin(&self, purpose: NetPurpose, host: &str) -> Result<InFlight<'_>, SecurityError> {
+        *lock(&self.in_flight) += 1;
+        let req = InFlight(self);
+        self.check(purpose, host)?;
+        Ok(req)
+    }
+
+    /// Resolves once Air-Gap is ON.
+    pub async fn turned_on(&self) {
+        // Err only if the sender is dropped, which cannot happen while `self` is borrowed.
+        let _ = self.on.subscribe().wait_for(|on| *on).await;
     }
 
     pub fn check(&self, purpose: NetPurpose, host: &str) -> Result<(), SecurityError> {
@@ -72,6 +123,7 @@ impl AirGapGuard {
 mod tests {
     use super::*;
     use crate::storage::db::tests::temp_db;
+    use std::time::Duration;
 
     #[test]
     fn check_matrix() {
@@ -108,6 +160,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn turning_on_waits_for_in_flight_requests() {
+        let (_dir, db) = temp_db();
+        let (guard, p) = (AirGapGuard::load(&db).unwrap(), NetPurpose::ModelDownload);
+        guard.set_enabled(&db, false).unwrap();
+        let req = guard.begin(p, p.host()).unwrap();
+        let (g, d) = (&guard, &db);
+        std::thread::scope(|s| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            s.spawn(move || {
+                g.set_enabled(d, true).unwrap();
+                tx.send(()).unwrap();
+            });
+            // The in-flight request is told to stop...
+            tauri::async_runtime::block_on(g.turned_on());
+            // ...and ON is not acknowledged while it is still in flight.
+            assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+            drop(req);
+            rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        assert!(matches!(
+            guard.begin(p, p.host()),
+            Err(SecurityError::AirGapEnabled)
+        ));
+        // A blocked request is not left in flight, so the next ON returns at once.
+        guard.set_enabled(&db, false).unwrap();
+        guard.set_enabled(&db, true).unwrap();
     }
 
     #[test]

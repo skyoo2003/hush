@@ -9,6 +9,7 @@ use reqwest::redirect::Policy;
 use reqwest::{Response, Url};
 
 use crate::security::airgap::{AirGapGuard, NetPurpose};
+use crate::security::error::SecurityError;
 use error::NetError;
 
 pub struct Client {
@@ -38,16 +39,16 @@ impl Client {
 
     pub async fn get(&self, purpose: NetPurpose, url: &str) -> Result<Response, NetError> {
         let url = Url::parse(url).map_err(|_| NetError::InvalidUrl)?;
-        match (url.scheme(), url.host_str()) {
-            ("https", Some(host)) => self.guard.check(purpose, host)?,
+        let _req = match (url.scheme(), url.host_str()) {
+            ("https", Some(host)) => self.guard.begin(purpose, host)?,
             _ => return Err(NetError::InvalidUrl),
-        }
+        };
         self.sent.fetch_add(1, Ordering::SeqCst);
-        self.http
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| NetError::Http(e.without_url()))
+        tokio::select! {
+            biased;
+            () = self.guard.turned_on() => Err(SecurityError::AirGapEnabled.into()),
+            r = self.http.get(url).send() => r.map_err(|e| NetError::Http(e.without_url())),
+        }
     }
 
     /// Requests that passed the guard and were handed to reqwest. Test hook.
@@ -59,7 +60,6 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::security::error::SecurityError;
     use crate::storage::db::tests::temp_db;
     use tauri::async_runtime::block_on;
 
