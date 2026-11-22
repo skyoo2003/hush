@@ -125,3 +125,17 @@ TODO
 
 Constraints
 - `run.sh` downloads tla2tools.jar from GitHub once, as a developer tool, not from the app. It needs Java 11 or later.
+
+## 2026-11-22 (verification skill, dev signing)
+
+Done
+- Added the `verify-hush` project skill (`.claude/skills/verify-hush/`): launch, doctor, cleanup, window capture, an AX tree dump, a scripted quick-search journey, and a feature map (app launch, quick search, Air-Gap, search results). Evidence goes to `.verify/<run>/` (git-ignored). Proven end to end: launch, doctor, quick-search journey, cleanup, evidence kept.
+- Stopped the keychain prompt that appeared after every rebuild. Ad-hoc signatures change per build, so the keychain item's ACL no longer matched. `scripts/dev-sign.sh`, the cargo runner from `src-tauri/.cargo/config.toml`, re-signs dev binaries with `$HUSH_DEV_SIGN_IDENTITY` and the bundle ID as identifier. Verified: after one "Always Allow", a rebuilt binary launched with no prompt. Documented in CONTRIBUTING.md.
+
+TODO
+- Air-Gap toggle and search results are unreachable from the UI, so their feature-map journeys report "unreachable" until the UI lands.
+- The quick-search shortcut "toggle closes the popup" path is mapped but not scripted.
+
+Constraints
+- Verification drives the user's real data dir and login keychain. There is no isolated instance: a fake `HOME` makes macOS offer to reset the login keychain.
+- The `launch.sh` keychain-prompt timeout path was not exercised end to end.

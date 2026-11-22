@@ -17,6 +17,15 @@ pnpm install
 pnpm tauri dev
 ```
 
+Dev builds are ad-hoc signed, so every rebuild looks like a new app to the login keychain, and macOS asks for your password again to release the DB key. To stop that, sign dev builds with a code-signing identity you already have (an Apple Development certificate works):
+
+```sh
+security find-identity -v -p codesigning           # pick a SHA-1 or name
+export HUSH_DEV_SIGN_IDENTITY=<SHA-1 or name>      # e.g. in ~/.zshrc
+```
+
+`cargo run` and `pnpm tauri dev` start the app through `scripts/dev-sign.sh`, which re-signs it with that identity and a fixed identifier. Click "Always Allow" on the next prompt and it will not come back after rebuilds. With the variable unset, nothing changes.
+
 ## Checks
 
 Run everything CI runs before you push:
