@@ -33,6 +33,7 @@ TODO
 - `SITE_URL`, `SPONSOR_URLS`를 실제 값으로 바꾼다.
 - 티어가 필요한 커맨드가 생기면 `EntitlementManager`와 `require()`를 만든다.
 - 번들 ID가 `.app`으로 끝나는 문제를 배포 전에 정한다(ADR-002).
+- GitHub Actions에서 CI를 아직 한 번도 돌리지 못했다. 계정 결제 문제로 잡이 시작되지 않는다. 결제를 정리한 뒤 다시 돌려 통과를 확인한다.
 
 제약
 - 아이콘은 단색 임시 이미지다.
