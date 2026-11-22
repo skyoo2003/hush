@@ -63,3 +63,23 @@ Constraints
 - `KeychainKeyProvider` is macOS-only, so the crate builds only on macOS.
 - `ScopedPath` checks and then the caller opens, so a symlink swapped in between is not caught.
 - Unsigned dev builds may get a keychain access prompt after a rebuild changes the binary signature.
+
+## 2026-11-22 (TODO sweep)
+
+Done
+- `cache_size` and memory cap policy: 1 GiB per reader plus a process-wide `soft_heap_limit` of 1 GiB (ADR-004).
+- Reader pool now picks the lowest free reader, so a lone caller keeps one warm cache and never waits on a busy reader (ADR-004).
+- Verified `PRAGMA temp_store=MEMORY` in product code, including that the build has no `TEMP_STORE=0` override.
+- Added the `set_air_gap` IPC command (main window only).
+- `CmdOrCtrl+Shift+Space` toggles `quick-search` via `tauri-plugin-global-shortcut`.
+- Measured `int8[384]` and `bit[384]` latency and recall (`cargo run --release -- quant`). Results are in ADR-001. Staying on float for now.
+
+TODO
+- Check the global shortcut by hand in the running app. The automated check was blocked: the dev build waited on a keychain access prompt, so setup never reached shortcut registration.
+- Add an Air-Gap toggle to the main window UI, and read the current state (`get_settings` is still a stub).
+- Remeasure quantization recall on real embeddings, calibrate the int8 scale, and measure the effect of enabling `SQLITE_VEC_ENABLE_NEON`.
+- Still open from earlier entries: average chunks per document (needs ingest), IPC type generation and `EntitlementManager` (need real I/O or a gated command), `SITE_URL`/`SPONSOR_URLS`, the license provider, the bundle ID, and CI billing.
+
+Constraints
+- Quantization recall was measured on random vectors only.
+- The 1 GiB cache budget is fixed and not derived from physical RAM.

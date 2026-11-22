@@ -1,6 +1,7 @@
 //! Throwaway spike: SQLCipher (rusqlite bundled) + sqlite-vec (static, auto_extension) + FTS5.
 //! Run: cargo run --release            (checks 1-3, then KNN bench at 1k/100k/300k)
 //!      cargo run --release -- quick   (checks 1-3 only)
+//!      cargo run --release -- quant   (checks 1-3, then float vs int8 vs bit KNN latency and recall)
 use rusqlite::{ffi, params, Connection};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -280,12 +281,164 @@ fn bench(dir: &Path) {
     }
 }
 
+/// Each config: (label, vec0 table, query expression, k fetched, rerank with float distance).
+const QUANT: &[(&str, &str, &str, usize, bool)] = &[
+    ("float", "vf", "?1", 10, false),
+    ("int8", "vi", "vec_quantize_int8(?1, 'unit')", 10, false),
+    ("int8-scaled", "vs", "vec_int8(?2)", 10, false),
+    ("bit", "vb", "vec_quantize_binary(?1)", 10, false),
+    ("bit+rerank100", "vb", "vec_quantize_binary(?1)", 100, true),
+];
+
+fn quant_sql(table: &str, expr: &str, k: usize, rerank: bool) -> String {
+    let base = format!(
+        "SELECT rowid FROM {table} WHERE embedding MATCH {expr} AND k = {k} ORDER BY distance"
+    );
+    if rerank {
+        format!(
+            "WITH c AS ({base}) SELECT vf.rowid FROM vf JOIN c ON vf.rowid = c.rowid \
+                 ORDER BY vec_distance_l2(vf.embedding, ?1) LIMIT 10"
+        )
+    } else {
+        base
+    }
+}
+
+/// 'unit' maps [-1, 1] to int8, but 384-dim unit vectors have components near ±0.05.
+/// This maps [-0.25, 0.25] instead, clamping the rare larger component.
+fn int8_scaled(v: &[f32]) -> Vec<u8> {
+    v.iter()
+        .map(|x| (x * 508.0).round().clamp(-128.0, 127.0) as i8 as u8)
+        .collect()
+}
+
+fn ids(c: &Connection, sql: &str, q: &[f32]) -> Vec<i64> {
+    let mut s = c.prepare_cached(sql).unwrap();
+    let p = [blob(q), int8_scaled(q)];
+    let n = s.parameter_count();
+    s.query_map(rusqlite::params_from_iter(&p[..n]), |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+fn quant(dir: &Path) {
+    // Profiling knobs: QUANT_N=300000 QUANT_ONLY=int8-scaled/1GiB QUANT_Q=1000.
+    let env = |k: &str| std::env::var(k).ok();
+    let queries_n: usize = env("QUANT_Q").map_or(100, |v| v.parse().unwrap());
+    let only = env("QUANT_ONLY");
+    let sizes: Vec<usize> =
+        env("QUANT_N").map_or(vec![100_000, 300_000], |v| vec![v.parse().unwrap()]);
+    println!("\nN,config,cache,p50_ms,p95_ms,max_ms,recall@10_mean,recall@10_min");
+    for n in sizes {
+        let db = dir.join(format!("quant-{n}.db"));
+        fresh(&db);
+        let c = open(&db, Some(KEY)).unwrap();
+        c.pragma_update(None, "journal_mode", "WAL").unwrap();
+        c.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE vf USING vec0(embedding float[{DIM}]);
+             CREATE VIRTUAL TABLE vi USING vec0(embedding int8[{DIM}]);
+             CREATE VIRTUAL TABLE vs USING vec0(embedding int8[{DIM}]);
+             CREATE VIRTUAL TABLE vb USING vec0(embedding bit[{DIM}]);
+             BEGIN;"
+        ))
+        .unwrap();
+        let mut rng = Rng(0x9E3779B97F4A7C15);
+        for i in 1..=n as i64 {
+            let f = rng.unit_vec();
+            let v = blob(&f);
+            c.execute(
+                "INSERT INTO vs(rowid, embedding) VALUES (?1, vec_int8(?2))",
+                params![i, int8_scaled(&f)],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO vf(rowid, embedding) VALUES (?1, ?2)",
+                params![i, v],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO vi(rowid, embedding) VALUES (?1, vec_quantize_int8(?2, 'unit'))",
+                params![i, v],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO vb(rowid, embedding) VALUES (?1, vec_quantize_binary(?2))",
+                params![i, v],
+            )
+            .unwrap();
+        }
+        c.execute_batch("COMMIT").unwrap();
+        for t in ["vf", "vi", "vs", "vb"] {
+            let bytes: i64 = c
+                .query_row(
+                    &format!("SELECT sum(length(vectors)) FROM {t}_vector_chunks00"),
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            println!("# {n} {t} vector bytes {:.1} MB", bytes as f64 / 1e6);
+        }
+        c.pragma_update(None, "wal_checkpoint", "TRUNCATE").unwrap();
+        // Ground truth: exact float top-10, untimed. 3 warmups + queries_n timed queries.
+        let mut qrng = Rng(42);
+        let queries: Vec<Vec<f32>> = (0..3 + queries_n).map(|_| qrng.unit_vec()).collect();
+        c.pragma_update(None, "cache_size", -1_048_576).unwrap();
+        let truth: Vec<Vec<i64>> = queries
+            .iter()
+            .map(|q| ids(&c, &quant_sql("vf", "?1", 10, false), q))
+            .collect();
+        drop(c);
+        for (cache_label, cache) in [("default", None), ("1GiB", Some(-1_048_576))] {
+            for &(label, table, expr, k, rerank) in QUANT {
+                if only
+                    .as_ref()
+                    .is_some_and(|o| *o != format!("{label}/{cache_label}"))
+                {
+                    continue;
+                }
+                eprintln!("# timing {label}/{cache_label}");
+                let c = open(&db, Some(KEY)).unwrap(); // fresh connection: empty page cache
+                if let Some(cs) = cache {
+                    c.pragma_update(None, "cache_size", cs).unwrap();
+                }
+                let sql = quant_sql(table, expr, k, rerank);
+                let (mut ms, mut recall) = (vec![], vec![]);
+                for (i, q) in queries.iter().enumerate() {
+                    let t = Instant::now();
+                    let got = ids(&c, &sql, q);
+                    let e = t.elapsed().as_secs_f64() * 1e3;
+                    assert_eq!(got.len(), 10, "{label}");
+                    if i >= 3 {
+                        ms.push(e);
+                        recall.push(
+                            got.iter().filter(|id| truth[i].contains(id)).count() as f64 / 10.0,
+                        );
+                    }
+                }
+                ms.sort_by(f64::total_cmp);
+                let mean = recall.iter().sum::<f64>() / recall.len() as f64;
+                let min = recall.iter().copied().fold(1.0, f64::min);
+                println!(
+                    "{n},{label},{cache_label},{:.2},{:.2},{:.2},{mean:.3},{min:.1}",
+                    pct(&ms, 0.5),
+                    pct(&ms, 0.95),
+                    ms[ms.len() - 1]
+                );
+            }
+        }
+        fresh(&db);
+    }
+}
+
 fn main() {
     register_vec();
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/spike-data");
     std::fs::create_dir_all(&dir).unwrap();
     checks(&dir);
-    if std::env::args().nth(1).as_deref() != Some("quick") {
-        bench(&dir);
+    match std::env::args().nth(1).as_deref() {
+        Some("quick") => {}
+        Some("quant") => quant(&dir),
+        _ => bench(&dir),
     }
 }

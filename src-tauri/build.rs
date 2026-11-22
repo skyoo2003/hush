@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "hide_window",
     "list_folders",
     "get_settings",
+    "set_air_gap",
     "get_license_status",
     "list_models",
     "export_pack",
