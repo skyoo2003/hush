@@ -63,3 +63,16 @@ impl From<image::ImageError> for ParseError {
         }
     }
 }
+
+/// Pipeline failures. Messages never carry paths or document content.
+#[derive(Debug, thiserror::Error)]
+pub enum PipelineError {
+    #[error(transparent)]
+    Scope(#[from] crate::security::error::SecurityError),
+    #[error("file read failed")]
+    Io(#[source] std::io::Error),
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+    #[error(transparent)]
+    Storage(#[from] crate::storage::error::StorageError),
+}

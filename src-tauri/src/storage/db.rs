@@ -11,7 +11,10 @@ use super::error::StorageError;
 use super::keychain::{DbKey, KeyProvider};
 
 /// Index `i` upgrades the schema from `user_version` i to i + 1.
-const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/0001_init.sql"),
+    include_str!("migrations/0002_chunk_sha256.sql"),
+];
 const READERS: usize = 4;
 /// Page cache budget, in KiB. ADR-001: KNN is ~10x faster once the vector table fits in the cache.
 /// Each reader may grow to this size, and `soft_heap_limit` holds all connections together near it.

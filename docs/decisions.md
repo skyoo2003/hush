@@ -321,3 +321,29 @@ PDFium wins because one engine gives char bounds, rendering, and path objects, a
 | `objc2-vision` 0.3 (macOS only, `VNRecognizeTextRequest`, `VNRequestHandler`, `VNObservation`) | Apple Vision text recognition, on-device | Zlib OR Apache-2.0 OR MIT | None. Vision's recognition runs locally. |
 
 `cargo deny check licenses` passes without widening the allowlist.
+
+## ADR-008. Chunker, change detection, and the per-file pipeline
+
+- Date: 2026-11-22
+- Status: Accepted
+
+### Decision
+
+- `ingest::chunker::chunk` turns a `ParsedDocument` into chunks with `char` offsets into `doc_text` (units joined with `\n`). A chunk never spans a block: one page, one heading section, one run of `Line` units, or one image. Defaults: target 400, max 512, overlap 60 tokens.
+- Within a block, text is cut into atoms by paragraph, then sentence, then word (UAX #29 via `unicode-segmentation`), then raw chars. A piece is cut further only while it is over `max - ceil(1.2 x overlap)` tokens, so overlap plus one atom always fits. Atoms are packed greedily to the target.
+- Overlap starts at the latest sentence start (else word start, else char) whose suffix counts 0.8 to 1.2 x overlap. Chunks under 2 x overlap do not overlap.
+- Tokens are counted as `ceil(chars / 4)` (`CharApprox`) until the embedding model's tokenizer lands; this undercounts Hangul and CJK.
+- `bbox` is one rect per text line of the chunk's spans, merged into at most 8.
+- `ingest::hash::decide` skips a file whose size and mtime are unchanged without reading it. A changed stat hashes the file (SHA-256, 64 KiB blocks); the same hash skips and stores the new stat.
+- `ingest::pipeline::process_file` is the one ingest file that calls storage. `Db::replace_chunks` replaces the chunks, marks the document indexed, and adds one `doc_versions` row in one transaction. A crash before it leaves `sha256` NULL, so the next run indexes the file again.
+- Migration 0002 adds `chunks.sha256`.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `sha2` 0.10 | SHA-256 of files and chunk text. Already in the tree through Tauri. | MIT OR Apache-2.0 | None |
+| `unicode-segmentation` 1 | UAX #29 sentence and word boundaries for the chunker. Already in the tree through `keyboard-types`. | MIT OR Apache-2.0 | None |
+| `proptest` 1 (dev only, `default-features = false`, `std`) | Property tests over generated documents. Pulls `rand_xorshift` and `unarray` (MIT OR Apache-2.0). No fork or timeout features. | MIT OR Apache-2.0 | None |
+
+`cargo deny check licenses` passes without widening the allowlist.

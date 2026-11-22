@@ -19,7 +19,7 @@ A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in
 
 ## Module boundaries
 
-- ingest/: file → ParsedDocument → Vec<Chunk>. Knows nothing about the DB or models.
+- ingest/: file → ParsedDocument → Vec<Chunk>. Knows nothing about the DB or models, except `ingest/pipeline.rs`, which calls `Db` methods from `storage/documents.rs` (all SQL stays in storage).
 - rag/: embedding, hybrid (vector + keyword + reranker), synthesizer (cited Q&A and guards), hushpack. Knows nothing about the file system.
 - storage/: SQLCipher connection, schema and migrations, FTS, change history, keychain.
 - security/: AirGapGuard, ScopedPath, pii_guard, license (license file verification).
