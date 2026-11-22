@@ -1,8 +1,8 @@
-# AirGap Search — Agent Rules (PRD v2.0)
+# Hush — Agent Rules
 
 ## 제품 한 줄
 
-지정한 로컬 폴더 문서를 100% 온디바이스로 인덱싱·검색·요약하고, 모든 결과에 원문 출처(파일·페이지·위치·발췌)를 붙이는 Zero-Cloud RAG 데스크톱 앱. Tauri v2 + Rust + React/TS. 티어: Free / Supporter / Lite / Pro.
+지정한 로컬 폴더 문서를 100% 온디바이스로 인덱싱·검색·요약하고, 모든 결과에 원문 출처(파일·페이지·위치·발췌)를 붙이는 Zero-Cloud RAG 데스크톱 앱. Tauri v2 + Rust + React/TS. 티어: Free / Lite / Pro(월간 구독). Supporter는 후원자 표시용 설정이며 티어가 아니다.
 
 ## 절대 규칙 (위반이 필요하면 작업 중단 후 보고)
 
@@ -20,10 +20,10 @@
 ## 모듈 경계
 
 - ingest/: 파일 → ParsedDocument → Vec<Chunk>. DB·모델은 모른다.
-- rag/: 임베딩, hybrid(벡터+키워드+리랭커), synthesizer(출처 Q&A와 가드), agpack. 파일시스템은 모른다.
+- rag/: 임베딩, hybrid(벡터+키워드+리랭커), synthesizer(출처 Q&A와 가드), hushpack. 파일시스템은 모른다.
 - storage/: SQLCipher 연결, 스키마·마이그레이션, FTS, 변경 이력, 키체인.
-- security/: AirGapGuard, ScopedPath, pii_guard, license(토큰 검증).
-- entitlement.rs: PlanTier, TierCapabilities, 한도 검사. 다른 모듈을 호출하지 않는 순수 로직이다.
+- security/: AirGapGuard, ScopedPath, pii_guard, license(라이선스 파일 검증).
+- entitlement.rs: PlanTier, TierCapabilities(기능 권한 표). 다른 모듈을 호출하지 않는 순수 로직이다.
 - commands.rs: IPC 진입점만 둔다. 권한 검사 → 서비스 호출 → AppError 변환 순서를 지킨다.
 - 모듈별 error.rs(thiserror). IPC 경계에서만 AppError { code, message }로 변환한다. 권한 부족 코드는 `upgrade_required`다.
 
