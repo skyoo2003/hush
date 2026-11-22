@@ -2,6 +2,7 @@
 // Dumps the accessibility tree of every window: "<depth-indent><role>[/<subrole>] desc=<..> value=<..>".
 // Web content (ARIA labels, input values, heading text) shows up here, so grep it for proof.
 import ApplicationServices
+import Foundation
 guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else {
   print("usage: ax.swift <pid>"); exit(2)
 }
@@ -16,6 +17,8 @@ func dump(_ e: AXUIElement, _ depth: Int) {
   var line = String(repeating: "  ", count: depth) + role + sub
   for (k, a) in [("title", kAXTitleAttribute), ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute)] {
     if let s = attr(e, a) as? String, !s.isEmpty { line += " \(k)=\(s)" }
+    // Checkboxes and switches report their state as a number (0 or 1).
+    else if let n = attr(e, a) as? NSNumber { line += " \(k)=\(n)" }
   }
   if role == "AXWindow", let f = attr(e, "AXFrame") {
     var r = CGRect.zero

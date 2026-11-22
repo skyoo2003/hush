@@ -179,13 +179,13 @@ mod tests {
         assert_not_implemented(invoke(&quick, "search"));
         assert!(invoke(&quick, "hide_window").is_ok());
 
-        assert_not_implemented(invoke(&main, "get_settings"));
+        assert_not_implemented(invoke(&main, "list_folders"));
         assert_acl_denied(invoke(&main, "search"));
         assert_acl_denied(invoke(&quick, "set_air_gap"));
     }
 
     #[test]
-    fn set_air_gap_persists() {
+    fn set_air_gap_persists_and_get_settings_reads_it() {
         let app = builder(mock_builder())
             .build(tauri::generate_context!(test = true))
             .unwrap();
@@ -204,6 +204,11 @@ mod tests {
             assert_eq!(net.guard().is_enabled(), on);
             let reloaded = security::airgap::AirGapGuard::load(&db).unwrap();
             assert_eq!(reloaded.is_enabled(), on);
+            let settings = invoke(&main, "get_settings").unwrap();
+            assert_eq!(
+                settings.deserialize::<serde_json::Value>().unwrap()["airGap"],
+                on
+            );
         }
     }
 }

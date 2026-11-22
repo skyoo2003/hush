@@ -1,6 +1,7 @@
 //! IPC entry points. Order inside each command: capability check, service call, AppError mapping.
 //! Which window may call which command is decided by `capabilities/*.json` (Tauri ACL).
 
+use serde::Serialize;
 use tauri::{Runtime, State, WebviewWindow};
 
 use crate::error::AppError;
@@ -38,9 +39,18 @@ pub fn list_folders() -> Result<(), AppError> {
     Err(AppError::not_implemented())
 }
 
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    pub air_gap: bool,
+}
+
 #[tauri::command]
-pub fn get_settings() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
+pub fn get_settings(net: State<'_, net::Client>) -> Settings {
+    Settings {
+        air_gap: net.guard().is_enabled(),
+    }
 }
 
 /// Not tier-gated: Air-Gap is a safety feature (rule 10).

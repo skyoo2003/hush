@@ -1,3 +1,7 @@
 # `cargo run` / `pnpm tauri dev` start the app through dev-sign.sh (see that script for why).
 [target.'cfg(target_os = "macos")']
 runner = "../scripts/dev-sign.sh"
+
+# ts-rs writes the IPC types here when `cargo test` runs; CI fails if they drift.
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/ipc", relative = true }

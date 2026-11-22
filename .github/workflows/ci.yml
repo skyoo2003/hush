@@ -37,8 +37,9 @@ jobs:
         working-directory: src-tauri
       - run: cargo test
         working-directory: src-tauri
-      - name: Brand drift check
-        run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json
+      # cargo test regenerates src/ipc/ through ts-rs.
+      - name: Generated file drift check
+        run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json src/ipc
 
   licenses:
     # cargo-deny-action runs in Docker, which macOS runners lack. It reads metadata only, so Linux is fine.

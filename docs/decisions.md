@@ -374,3 +374,20 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 | Crate | Reason | License | Network |
 | --- | --- | --- | --- |
 | `tokio` 1 (`default-features = false`, `sync`, `macros`) | `watch` for the mode, `select!` to cancel a request. Already in the tree through reqwest and Tauri; this only adds `tokio-macros`. | MIT | None |
+
+## ADR-010. IPC types generated with ts-rs
+
+- Date: 2026-11-23
+- Status: Accepted
+
+### Decision
+
+- IPC structs and enums derive `ts_rs::TS` under `cfg_attr(test, ...)` with `#[ts(export)]`. `cargo test` writes them to `src/ipc/` (`TS_RS_EXPORT_DIR` in `src-tauri/.cargo/config.toml`). The generated files are committed, and CI fails when `git diff src/ipc` is not empty after `cargo test`.
+- ts-rs reads the serde attributes, so `#[serde(rename_all = "camelCase")]` shapes both the JSON and the TS type.
+- tauri-specta was not chosen. It also generates typed `invoke` wrappers, but its Tauri v2 line is still a release candidate. The command names stay plain strings in the frontend for now. The Tauri ACL test catches a name that does not exist.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `ts-rs` 12 (dev only) | Generates the TS types for IPC inputs and outputs. It is not in the release binary. | MIT | None |

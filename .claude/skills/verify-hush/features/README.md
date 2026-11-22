@@ -11,7 +11,7 @@ This directory is the maintained source for verifying Hush's user-facing behavio
 
 ## Driving conventions
 
-- Prefer AX roles and accessible names (`AXSearchField desc=Search`, `AXHeading title=Hush`) over coordinates. Identify windows by the `windows.swift` label, never by title (both are `Hush`).
+- Prefer AX roles and accessible names (`AXSearchField desc=Search`, `AXHeading title=Hush`, `AXSwitch title=Air-Gap mode`) over coordinates. Identify windows by the `windows.swift` label, never by title (both are `Hush`).
 - Confirm that the frontmost pid is ours before every keystroke.
 - Leave the app as you found it: popup hidden, no setting changed. Undo any mutation and prove that the undo worked too.
 
@@ -28,6 +28,6 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [App launch](./app-launch.md): the main window opens, and the encrypted DB and log are created. Status: drivable.
-- [Quick search popup](./quick-search.md): the global shortcut shows the popup, the user types, and Escape clears and hides it. Status: drivable, proven by `journey-quick-search.sh`.
-- [Air-Gap toggle](./air-gap.md): turn network access for license, model, and update checks on or off. Status: **unreachable**, no UI yet (`set_air_gap` IPC exists).
+- [Quick search popup](./quick-search.md): the global shortcut shows the popup, the user types, and Escape clears and hides it. Status: drivable, proven by `journey-quick-search.sh` (including the shortcut toggle).
+- [Air-Gap toggle](./air-gap.md): turn network access for license, model, and update checks on or off. Status: drivable, proven by `journey-air-gap.sh`.
 - [Search results and citations](./search-results.md): run a query, open the source, copy a citation. Status: **unreachable**, the commands return `not_implemented` and there is no results UI.

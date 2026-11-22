@@ -22,12 +22,12 @@ Preconditions:
 - `doctor.sh` prints `doctor: ok`, and `windows.swift` shows `quick-search 0`.
 - The log has no `quick-search shortcut not registered` line since launch.
 
-- **Whole journey.** Run `$S/journey-quick-search.sh`. Exit 0 and a last line of `PASS: quick-search show/type/escape/clear`. Evidence: `quick-search.txt`, `quick-search-ax.txt`, `quick-search-typed.png`, `quick-search-reopen-ax.txt`, and `quick-search-reopened.png` in `.verify/current/`.
+- **Whole journey.** Run `$S/journey-quick-search.sh`. Exit 0 and a last line of `PASS: quick-search show/type/escape/clear/toggle`. Evidence: `quick-search.txt`, `quick-search-ax.txt`, `quick-search-typed.png`, `quick-search-reopen-ax.txt`, and `quick-search-reopened.png` in `.verify/current/`.
 - **Show.** Run `osascript -e 'tell application "System Events" to key code 49 using {command down, shift down}'`. `windows.swift` shows `quick-search 1`, and the frontmost pid equals `.verify/current/pid`.
 - **Type.** Run `osascript -e 'tell application "System Events" to keystroke "20261122"'`. `ax.swift` (polled) contains `AXTextField/AXSearchField title=Search desc=Search value=20261122`.
 - **Escape.** Run `osascript -e 'tell application "System Events" to key code 53'`. `windows.swift` shows `quick-search 0`.
 - **Reopen empty.** Press the shortcut again. `ax.swift` shows `AXSearchField` with no `value=`. Press Escape to restore the baseline.
-- **Toggle.** With the popup visible, press the shortcut. `windows.swift` shows `quick-search 0`. This is not covered by the journey script, so drive it by hand when shortcut code changes.
+- **Toggle.** With the popup visible, press the shortcut. `windows.swift` shows `quick-search 0`. The journey covers this as step 5.
 - **Privacy check.** After the journey, `grep 20261122` on the new log lines must find nothing (rule 5).
 
 ## Gotchas
