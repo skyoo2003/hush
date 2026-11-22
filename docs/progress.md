@@ -101,3 +101,14 @@ TODO
 Constraints
 - npm dependency licenses are checked by hand only.
 - Earlier commits have no DCO sign-off.
+
+## 2026-11-22 (README)
+
+Done
+- Added `README.md`: what Hush is, the privacy guarantees, the tier model, build steps, layout, and links to the governance files.
+
+TODO
+- Update the README when ingestion, search, and Q&A land, and move items out of "Planned features".
+
+Constraints
+- The README describes the app as pre-alpha and macOS-only, matching the current code.
