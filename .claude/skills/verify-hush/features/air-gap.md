@@ -1,6 +1,6 @@
 # Air-Gap toggle
 
-The user turns Air-Gap mode on (the default) or off. While it is on, the app makes no outbound requests, including license, model download, and update checks. The setting survives a restart.
+The user turns Air-Gap mode on (the default) or off. While it is on, the app makes no outbound requests, including model downloads and update checks. The setting survives a restart.
 
 ## Sub-features
 

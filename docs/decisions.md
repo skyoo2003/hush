@@ -50,7 +50,7 @@ Inserting 300,000 rows took 3.4 s in one transaction (vectors only).
 
 **With the default cache, the limit is page HMAC verification.** Sampled the 100k default-cache run with macOS `sample` for 12 s (a separate run from the reported numbers). Top stacks: `sha512_block_armv8` 56%, `pread` 12%, `vec0Filter_knn_chunks_iter` (distance computation) 8%, `aes_v8_cbc_encrypt` 7%. With a 2 MB cache, every query rereads the whole 160 MB from the OS disk cache, verifies it with HMAC-SHA512, and decrypts it. A cache larger than the DB keeps decrypted pages in memory. Latency then drops 10.7x and beats even plaintext with the default cache, because plaintext still copies pages with `pread` on every query. The limit in the large-cache configuration is presumably distance computation and memory bandwidth; that configuration was not profiled.
 
-### Pro cap estimate
+### Capacity estimate
 
 The large-cache configuration costs 0.169 µs per vector (50.6 ms / 300k) and about 1.6 KB of cache memory per vector (478 MB / 300k). The values below scale the measurements linearly.
 
@@ -125,7 +125,7 @@ Decision: stay on `float[384]` for now. Revisit int8 (pre-scaled) when real embe
 
 - There are two windows, `main` and `quick-search`. Both load `index.html`, and `App.tsx` picks the UI from `getCurrentWindow().label`.
 - The future `/compare`, `/pack`, and `/viewer` views are routes inside the `main` window, not new windows. There is only one screen today, so no router yet; pick one when the routes exist.
-- The 9 IPC commands are registered through `AppManifest::commands` in `build.rs`. Each command then gets an `allow-<name>` permission, and any command a capability does not grant is rejected. `quick-search` may call only `search`, `open_source`, `copy_citation`, and `hide_window`; `main` may call only `list_folders`, `get_settings`, `get_license_status`, `list_models`, and `export_pack`. No `core:*`, fs, shell, or http permissions and no Tauri plugins (ADR-004 adds `global-shortcut`, used from Rust only, with no JS permission granted).
+- The IPC commands are registered through `AppManifest::commands` in `build.rs`. Each command then gets an `allow-<name>` permission, and any command a capability does not grant is rejected. `quick-search` may call only `search`, `open_source`, `copy_citation`, and `hide_window`; `main` may call only `list_folders`, `get_settings`, `list_models`, and `export_pack` (`set_air_gap` per ADR-004; `get_license_status` was removed by ADR-011). No `core:*`, fs, shell, or http permissions and no Tauri plugins (ADR-004 adds `global-shortcut`, used from Rust only, with no JS permission granted).
 - Brand strings are written only in `src-tauri/src/brand.rs`. `build.rs` `include!`s that file, generates `src/brand.ts`, and syncs `productName`, `identifier`, and window titles in `tauri.conf.json`. It skips the write when content is unchanged: tauri-build watches `tauri.conf.json`, so writing every time would rebuild forever. `scripts/check-brand.sh` catches hardcoded strings, and CI runs `git diff --exit-code` to confirm the generated files match what is committed.
 - The CSP is `script-src 'self'`, and `connect-src` is only `ipc:` and `http://ipc.localhost`. Only the development `devCsp` adds `ws://localhost:1420` for Vite HMR. No `@vitejs/plugin-react`: it injects an inline refresh script that `script-src 'self'` blocks. So there is no React Fast Refresh, and an edit reloads the whole page.
 - Vite 8 transforms with Oxc instead of esbuild. The `esbuild` option is deprecated and its type has no `jsx`, so `vite.config.ts` sets JSX with `oxc: { jsx: { runtime: "automatic" } }`.
@@ -189,7 +189,6 @@ The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the re
 
 | Purpose | Host |
 | --- | --- |
-| License | `license-provider.invalid` until a provider is chosen. `.invalid` never resolves. |
 | ModelDownload | `huggingface.co` |
 | UpdateCheck | Host of `brand::SITE_URL` |
 
@@ -227,7 +226,7 @@ The test in `src-tauri/src/lib.rs` wires `tauri::test::mock_builder()` to the re
 ## ADR-005. GPL-3.0-only license and dependency license check
 
 - Date: 2026-11-22
-- Status: Accepted
+- Status: Superseded in part by ADR-011 (license identifier, paid tiers)
 
 ### Decision
 
@@ -391,3 +390,22 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 | Crate | Reason | License | Network |
 | --- | --- | --- | --- |
 | `ts-rs` 12 (dev only) | Generates the TS types for IPC inputs and outputs. It is not in the release binary. | MIT | None |
+
+## ADR-011. Free app funded by sponsors, GPL-3.0-or-later
+
+- Date: 2026-11-23
+- Status: Accepted
+- Supersedes: the `-only` choice and the paid-tier reasoning in ADR-005, and the License host in ADR-003
+
+### Decision
+
+- Hush is free. Every feature works the same for every user. There are no tiers, feature locks, usage limits, upgrade prompts, payment code, or license checks. Maintenance is paid for by sponsors (GitHub Sponsors monthly, Buy Me a Coffee one-time). Sponsors get only symbolic thanks.
+- Removed: `entitlement.rs`, the `get_license_status` command and its permission, `ErrorCode::UpgradeRequired`, and `NetPurpose::License`. The app now has two network purposes, `ModelDownload` and `UpdateCheck`, and no telemetry.
+- The SPDX identifier is `GPL-3.0-or-later`, the usual choice, which leaves room to use a later GPL version. Every commit so far has one author, so the change needs no other consent. `deny.toml` adds `GPL-3.0-or-later` to the allowlist and keeps `GPL-3.0-only`, which is compatible for dependencies.
+- Distribution is GitHub Releases and Homebrew only, because the Mac App Store terms conflict with the GPL. Each release uploads the source archive of its tag, and the About screen shows the license notice and a source link. `docs/building.md` explains self-builds.
+- The name and icon are protected separately by `TRADEMARK.md`: forks must rename.
+
+### Consequences
+
+- Absolute rules 2, 6, 8, and 10 in `CLAUDE.md` change. Rule 8 now forbids feature gates instead of routing them through an entitlement manager, and rule 10 says the public repository is the complete source of official builds.
+- Without a CLA, relicensing later needs every contributor's consent. Decide before the repository goes public (`docs/roadmap.md`).

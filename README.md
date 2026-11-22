@@ -18,13 +18,19 @@ Most "chat with your documents" tools upload your files to someone else's server
 
 ## How it stays offline
 
-The app makes outbound network requests for exactly three reasons: verifying a license, downloading a model you asked for, and checking for app updates. Each is allowed to reach one fixed host. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
+The app makes outbound network requests for exactly two reasons: downloading a model you asked for, and checking for app updates. There is no telemetry. Each is allowed to reach one fixed host. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
 
-## Free and paid tiers
+The code in this repository is all of the code in official builds. There are no private modules, so anyone can check the claim that nothing leaves the device.
 
-Hush comes in Free, Lite, and Pro tiers. Paid tiers only add features. They never limit how many documents or folders you can index, never lower search quality, and never turn off safety features. If a subscription ends, your data is never deleted or hidden.
+## Free, funded by sponsors
 
-The code behind paid tiers is GPL source like the rest of the project.
+Hush is free. Every feature works the same for everyone, with no feature locks, usage limits, or upgrade prompts. The app contains no payment or license code.
+
+Maintenance is paid for by sponsors through [GitHub Sponsors](https://github.com/sponsors/skyoo2003) (monthly) and Buy Me a Coffee (one-time). Sponsoring gets you no extra features. Thanks are symbolic: a place in the README thank-you list if you want it, an in-app badge and theme you turn on yourself, and votes on the roadmap. Funding goals, totals, and spending are published every quarter in [docs/funding.md](docs/funding.md).
+
+## Install
+
+Hush is distributed through GitHub Releases and Homebrew only. It is not in the Mac App Store, whose terms conflict with the GPL. Each release also carries the source archive of its tag. See [SUPPORT.md](SUPPORT.md) for supported macOS versions.
 
 ## Planned features
 
@@ -36,6 +42,8 @@ The code behind paid tiers is GPL source like the rest of the project.
 
 ## Building from source
 
+The full guide is [docs/building.md](docs/building.md). The short version:
+
 Requirements:
 
 - macOS (the keychain integration is macOS-only for now)
@@ -46,6 +54,7 @@ Requirements:
 git clone https://github.com/skyoo2003/hush.git
 cd hush
 pnpm install
+bash scripts/fetch-pdfium.sh
 pnpm tauri dev
 ```
 
@@ -64,12 +73,12 @@ On first launch the app creates an encrypted database under `~/Library/Applicati
 | `src-tauri/src/ingest/` | Turns files into parsed documents and chunks. |
 | `src-tauri/src/rag/` | Embeddings, hybrid search, answer synthesis, hushpack. |
 | `src-tauri/src/storage/` | Encrypted database, schema migrations, full-text index, keychain. |
-| `src-tauri/src/security/` | Air-Gap guard, scoped path validation, PII guard, license verification. |
-| `src-tauri/src/entitlement.rs` | Tier permission table. |
+| `src-tauri/src/security/` | Air-Gap guard, scoped path validation, PII guard. |
 | `src-tauri/src/net.rs` | The only HTTP client in the app. |
 | `src-tauri/src/commands.rs` | IPC entry points called by the frontend. |
 | `src/` | React frontend. |
 | `docs/decisions.md` | Architecture decision records, with benchmarks. |
+| `docs/roadmap.md` | The 12-week plan to v1.0 and beyond. |
 
 ## Contributing
 
@@ -79,6 +88,6 @@ Found a way for data to leave the device? Please report it privately as describe
 
 ## License
 
-Hush is licensed under [GPL-3.0-only](LICENSE).
+Hush is licensed under [GPL-3.0-or-later](LICENSE). Forks are welcome under that license, but must use a different name and icon. See [TRADEMARK.md](TRADEMARK.md).
 
-Model weights are separate data files, not part of the program, and each model's license is recorded in the model catalog.
+Model weights are separate data files, not part of the program, and each model's license is recorded in the model catalog. Only models whose license allows redistribution are included in the offline kit.

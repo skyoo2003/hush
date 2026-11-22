@@ -29,5 +29,5 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 
 - [App launch](./app-launch.md): the main window opens, and the encrypted DB and log are created. Status: drivable.
 - [Quick search popup](./quick-search.md): the global shortcut shows the popup, the user types, and Escape clears and hides it. Status: drivable, proven by `journey-quick-search.sh` (including the shortcut toggle).
-- [Air-Gap toggle](./air-gap.md): turn network access for license, model, and update checks on or off. Status: drivable, proven by `journey-air-gap.sh`.
+- [Air-Gap toggle](./air-gap.md): turn network access for model downloads and update checks on or off. Status: drivable, proven by `journey-air-gap.sh`.
 - [Search results and citations](./search-results.md): run a query, open the source, copy a citation. Status: **unreachable**, the commands return `not_implemented` and there is no results UI.

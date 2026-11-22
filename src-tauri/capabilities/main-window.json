@@ -1,13 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "Main window: folders, settings, Air-Gap toggle, license, models, pack export.",
+  "description": "Main window: folders, settings, Air-Gap toggle, models, pack export.",
   "windows": ["main"],
   "permissions": [
     "allow-list-folders",
     "allow-get-settings",
     "allow-set-air-gap",
-    "allow-get-license-status",
     "allow-list-models",
     "allow-export-pack"
   ]

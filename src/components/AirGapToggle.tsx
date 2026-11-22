@@ -43,7 +43,7 @@ export function AirGapToggle() {
       </label>
       <p>
         {on === false
-          ? "Off. Only license checks, model downloads, and update checks may reach the network."
+          ? "Off. Only model downloads and update checks may reach the network."
           : "On. Nothing leaves this computer."}
       </p>
       {error && <p role="alert">{error}</p>}

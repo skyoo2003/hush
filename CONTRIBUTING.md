@@ -7,6 +7,8 @@ Thanks for helping. Hush indexes private documents entirely on-device, so every 
 - Read the absolute rules in [CLAUDE.md](CLAUDE.md). A pull request that breaks one is closed, however useful it is.
 - For anything larger than a bug fix, open an issue first so the design can be agreed before you write code.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Hush is free for everyone. Pull requests that add feature locks, usage limits, payment or license code, or telemetry are closed.
+- Maintainers triage once a week, so expect a reply within about a week.
 
 ## Development setup
 
@@ -43,7 +45,7 @@ cargo deny check licenses
 
 ## Pull requests
 
-- Keep one logical change per pull request, with its tests in the same change. A tier-gated feature includes tests that it is rejected on Free and allowed on the permitted tiers.
+- Keep one logical change per pull request, with its tests in the same change.
 - Write commit messages in [Conventional Commits](https://www.conventionalcommits.org/) form with a scope, for example `feat(storage): ...` or `fix(rag): ...`.
 - Write code, comments, docs, and commit messages in English.
 - Add an ADR to [docs/decisions.md](docs/decisions.md) for any architecture decision.
@@ -51,7 +53,7 @@ cargo deny check licenses
 
 ## New dependencies
 
-Record the reason, the license, and any network use in [docs/decisions.md](docs/decisions.md) before adding a crate or npm package. The license must be compatible with GPL-3.0-only. If `cargo deny check licenses` rejects it, do not widen `src-tauri/deny.toml` without an ADR explaining why the license is compatible.
+Record the reason, the license, and any network use in [docs/decisions.md](docs/decisions.md) before adding a crate or npm package. The license must be compatible with GPL-3.0 (Apache-2.0, MIT, BSD, and MPL-2.0 are; GPL-2.0-only, AGPL, and non-commercial licenses are not). If `cargo deny check licenses` rejects it, do not widen `src-tauri/deny.toml` without an ADR explaining why the license is compatible.
 
 ## Developer Certificate of Origin
 
@@ -65,4 +67,4 @@ This adds a `Signed-off-by: Your Name <you@example.com>` line that must match th
 
 ## License
 
-By contributing, you agree that your contributions are licensed under [GPL-3.0-only](LICENSE).
+By contributing, you agree that your contributions are licensed under [GPL-3.0-or-later](LICENSE). Copyright stays with you; there is no CLA.

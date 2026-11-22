@@ -1,4 +1,4 @@
-# `cargo deny check licenses` keeps every dependency GPL-3.0-only compatible.
+# `cargo deny check licenses` keeps every dependency GPL-3.0-or-later compatible.
 # Add a license here only after confirming GPL-3.0 compatibility in docs/decisions.md.
 [licenses]
 allow = [
@@ -10,6 +10,7 @@ allow = [
   "CC0-1.0",
   "CDLA-Permissive-2.0",
   "GPL-3.0-only",
+  "GPL-3.0-or-later",
   "ISC",
   "MIT",
   "MIT-0",
