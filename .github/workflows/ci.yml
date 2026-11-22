@@ -35,3 +35,13 @@ jobs:
         working-directory: src-tauri
       - name: Brand drift check
         run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json
+
+  licenses:
+    # cargo-deny-action runs in Docker, which macOS runners lack. It reads metadata only, so Linux is fine.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command: check licenses

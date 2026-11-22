@@ -35,6 +35,15 @@ A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in
 - IPC types are generated from Rust (tauri-specta or ts-rs). Use TS strict, and never define a type by hand twice.
 - DB schema changes always go in a new migration. Never modify a migration that has shipped.
 
+## Open source governance
+
+- The project is GPL-3.0-only (`LICENSE`). `src-tauri/Cargo.toml` and `package.json` declare `GPL-3.0-only`. Never change the license, `GOVERNANCE.md`, or an absolute rule without an issue approved by the lead maintainer.
+- Every dependency must be GPL-3.0-compatible. `cargo deny check licenses` (`src-tauri/deny.toml`) enforces this for crates. Widening its allowlist needs an ADR in docs/decisions.md. Never copy third-party code without checking its license and keeping its notice.
+- Commits use Conventional Commits with a scope (`feat(storage): ...`) and a DCO sign-off (`git commit -s`). There is no CLA.
+- Keep `GOVERNANCE.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and `.github/` (CODEOWNERS, issue forms, PR template) in sync with these rules. A change to the absolute rules, the checks, or the maintainers updates them in the same change.
+- Issues, PRs, fixtures, and examples never contain real document content, queries, file paths, or keys. Vulnerabilities go through GitHub private vulnerability reporting, never public issues.
+- Paid-tier code is GPL source like the rest. Do not add obfuscation, closed-source modules, or terms that restrict GPL rights.
+
 ## How to work
 
 - Before implementing, present the input/output structs, error types, and public signatures.
