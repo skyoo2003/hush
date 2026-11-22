@@ -70,7 +70,6 @@ On first launch the app creates an encrypted database under `~/Library/Applicati
 | `src-tauri/src/commands.rs` | IPC entry points called by the frontend. |
 | `src/` | React frontend. |
 | `docs/decisions.md` | Architecture decision records, with benchmarks. |
-| `docs/progress.md` | Running log of what's done and what's next. |
 
 ## Contributing
 
