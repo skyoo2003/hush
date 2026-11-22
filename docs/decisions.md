@@ -89,3 +89,59 @@ p50 ms (실행 1 / 실행 2), p95는 실행 2 값이다.
 | `libsqlite3-sys` (`bundled-sqlcipher-vendored-openssl`) | SQLCipher와 OpenSSL을 정적으로 빌드 | MIT. SQLCipher community는 BSD 계열이라 고지가 필요하다. | 런타임 없음 |
 | `openssl-src` (간접) | 시스템 OpenSSL 없이 빌드 | Apache-2.0 (OpenSSL 3.x) | 런타임 없음. 소스는 크레이트에 들어 있다. |
 | `sqlite-vec` | `vec0` 가상 테이블. C 소스를 정적으로 링크한다. | MIT OR Apache-2.0 | 런타임 없음 |
+
+## ADR-002. 앱 골격: Tauri v2 + React/TS + Vite, 창 2개와 창별 ACL
+
+- 날짜: 2026-11-22
+- 상태: 채택
+
+### 결정
+
+- 창은 `main`과 `quick-search` 두 개다. 둘 다 `index.html`을 읽고, `App.tsx`가 `getCurrentWindow().label`로 화면을 고른다.
+- 앞으로 만들 `/compare`, `/pack`, `/viewer`는 `main` 창 안의 경로로 둔다. 창을 더 만들지 않는다. 지금은 화면이 하나뿐이라 라우터를 넣지 않았다. 경로가 실제로 생길 때 라우터를 고른다.
+- IPC 커맨드 9개는 `build.rs`의 `AppManifest::commands`에 등록한다. 그러면 커맨드마다 `allow-<name>` 권한이 생기고, capability가 허용하지 않은 커맨드는 거부된다. `quick-search`는 `search`, `open_source`, `copy_citation`, `hide_window`만, `main`은 `list_folders`, `get_settings`, `get_license_status`, `list_models`, `export_pack`만 부를 수 있다. `core:*`, fs, shell, http 권한과 Tauri 플러그인은 넣지 않았다.
+- 브랜드 문자열은 `src-tauri/src/brand.rs`에만 쓴다. `build.rs`가 이 파일을 `include!`해서 `src/brand.ts`를 만들고, `tauri.conf.json`의 `productName`, `identifier`, 창 제목을 맞춘다. 내용이 같으면 파일을 쓰지 않는다. tauri-build가 `tauri.conf.json`을 감시하므로, 매번 쓰면 빌드가 끝없이 다시 돈다. `scripts/check-brand.sh`가 하드코딩을 잡고, CI는 `git diff --exit-code`로 생성 파일이 커밋본과 같은지 확인한다.
+- CSP는 `script-src 'self'`이고 `connect-src`는 `ipc:`와 `http://ipc.localhost`뿐이다. 개발용 `devCsp`에만 Vite HMR용 `ws://localhost:1420`을 더했다. `@vitejs/plugin-react`는 쓰지 않는다. 이 플러그인은 인라인 refresh 스크립트를 넣어서 `script-src 'self'`에 막힌다. 그래서 React Fast Refresh는 없고, 고치면 페이지 전체가 다시 로드된다.
+- Vite 8은 변환에 esbuild 대신 Oxc를 쓴다. `esbuild` 옵션은 deprecated이고 타입에 `jsx`가 없다. 그래서 `vite.config.ts`는 `oxc: { jsx: { runtime: "automatic" } }`로 JSX를 설정한다.
+
+### ACL 확인 결과
+
+`src-tauri/src/lib.rs` 테스트는 `tauri::test::mock_builder()`에 실제 `builder()`와 `generate_context!(test = true)`를 붙인다. 그래서 실제 capability 파일이 그대로 쓰인다. `test = true`는 macOS Info.plist 심볼(`_EMBED_INFO_PLIST`)만 빼는 옵션이다. 이 옵션이 없으면 `run()`의 `generate_context!()`와 심볼이 겹쳐서 테스트 빌드가 실패한다.
+
+- `quick-search`에서 `get_settings`를 부르면 ACL이 거부한다. 메시지는 `get_settings not allowed on window "quick-search", webview "quick-search", URL: local ... referenced by: capability: main-window, permission: allow-get-settings`다. AppError가 아니다.
+- `quick-search`의 `search`는 ACL을 통과하고 `not_implemented`를 돌려준다. `hide_window`는 Ok다.
+- `main`의 `get_settings`는 통과하고(`not_implemented`), `search`는 거부된다.
+- 테스트 요청의 URL은 `tauri://localhost`로 둔다. Tauri는 이 URL이 앱의 로컬 주소일 때만 `Origin::Local`로 보고, 다른 URL은 원격으로 취급한다. capability는 기본으로 로컬만 허용한다.
+- Tauri 2.12 소스(`webview/mod.rs` `on_message`)를 보면, 로컬 요청의 앱 커맨드는 앱 ACL 매니페스트가 있을 때만 ACL을 검사한다. `AppManifest::commands`를 등록하지 않으면 로컬 창은 capability와 상관없이 모든 앱 커맨드를 부를 수 있다. 그래서 새 커맨드는 반드시 `build.rs`의 `COMMANDS`에도 넣어야 한다. 넣지 않은 커맨드를 capability에서 참조하면 빌드가 실패한다.
+- 검증: `quick-search.json`에 `allow-get-settings`를 임시로 넣으면 테스트가 실패했다. 되돌리면 통과한다.
+- mock 빌드에서는 setup 훅이 돌지 않고 설정의 창도 만들어지지 않는다. 테스트가 창을 직접 만든다. 로그 파일도 생기지 않는다.
+
+### 번들 ID 경고
+
+`com.hush.app`은 `.app`으로 끝난다. Tauri는 macOS에서 `.app` 확장자와 겹친다고 경고한다. 사용자가 정한 값이라 그대로 둔다. 배포 전에 바꿀지 다시 정한다. 바꾸면 키체인 서비스명(`KEYCHAIN_SERVICE`)과 로그·데이터 디렉터리도 같이 바뀐다.
+
+### 새 크레이트
+
+| 크레이트 | 이유 | 라이선스 | 네트워크 |
+| --- | --- | --- | --- |
+| `tauri` 2.12 | 데스크톱 셸, IPC, 창, ACL. dev-dependency에서만 `test` feature를 켠다. | MIT OR Apache-2.0 | 런타임에 직접 요청하지 않는다. 업데이터, http 플러그인은 넣지 않았다. |
+| `tauri-build` 2.7 | 설정·capability 검증, 커맨드 권한 생성 | MIT OR Apache-2.0 | 없음 |
+| `serde` | IPC 직렬화 | MIT OR Apache-2.0 | 없음 |
+| `serde_json` | 테스트 직렬화. build-dependency에서는 `preserve_order`로 `tauri.conf.json`의 키 순서를 지킨다. | MIT OR Apache-2.0 | 없음 |
+| `thiserror` 2 | 모듈별 에러 타입 | MIT OR Apache-2.0 | 없음 |
+| `tracing` | 로그 | MIT | 없음 |
+| `tracing-subscriber` (`env-filter`, `fmt`) | 로그 필터(`RUST_LOG`, 기본 `info`)와 포맷 | MIT | 없음 |
+| `tracing-appender` | 앱 로그 디렉터리에 하루 단위로 파일을 돌리고 7개만 남긴다 | MIT | 없음 |
+
+### 새 npm 패키지
+
+| 패키지 | 이유 | 라이선스 | 네트워크 |
+| --- | --- | --- | --- |
+| `react`, `react-dom` 19 | UI | MIT | 없음 |
+| `@tauri-apps/api` 2 | `invoke`, 현재 창 라벨 | MIT OR Apache-2.0 | 없음. IPC만 쓴다. |
+| `@tauri-apps/cli` 2 (dev) | `tauri dev`, `tauri build`, 아이콘 생성 | MIT OR Apache-2.0 | 개발 도구. 앱에 들어가지 않는다. |
+| `vite` 8 (dev) | 번들러, 개발 서버(1420 포트) | MIT | 개발 서버는 로컬에서만 연다. 앱에 들어가지 않는다. |
+| `typescript` 7 (dev) | 타입 검사(strict) | Apache-2.0 | 없음 |
+| `@biomejs/biome` (dev) | 린트 | MIT OR Apache-2.0 | 없음 |
+| `vitest` (dev) | 프런트엔드 테스트 | MIT | 없음 |
+| `@types/react`, `@types/react-dom` (dev) | 타입 | MIT | 없음 |
