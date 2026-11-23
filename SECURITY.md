@@ -6,7 +6,15 @@ Report vulnerabilities privately through GitHub: open the repository's **Securit
 
 Include the version, the platform, and steps to reproduce. Never attach real private documents. Build a minimal sample file instead.
 
-Maintainers aim to acknowledge a report within 7 days and to agree on a disclosure date with the reporter.
+Target response times:
+
+| Step | Target |
+| --- | --- |
+| Acknowledge the report | 7 days |
+| Confirm or reject it, with a severity | 14 days |
+| Release a fix for a confirmed high or critical issue | 30 days |
+
+Maintainers agree on a disclosure date with the reporter, publish a GitHub Security Advisory with the fix, and credit the reporter unless they ask not to be.
 
 ## Supported versions
 

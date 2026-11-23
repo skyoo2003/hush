@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Throwaway spike: SQLCipher (rusqlite bundled) + sqlite-vec (static, auto_extension) + FTS5.
 //! Run: cargo run --release            (checks 1-3, then KNN bench at 1k/100k/300k)
 //!      cargo run --release -- quick   (checks 1-3 only)

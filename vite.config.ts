@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { defineConfig } from "vite";
 
 // No @vitejs/plugin-react: its inline refresh preamble violates CSP script-src 'self'.

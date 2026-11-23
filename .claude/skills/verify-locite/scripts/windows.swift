@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Usage: swift windows.swift <pid>
 // Prints "<label> <onscreen 0|1> <CGWindowID> <width>x<height>" for Locite's two app windows.
 // Labels come from tauri.conf.json: quick-search is the always-on-top one (layer > 0).

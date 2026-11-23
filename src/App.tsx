@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { APP_NAME } from "./brand";
 import { AirGapToggle } from "./components/AirGapToggle";

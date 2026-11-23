@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Fails if a brand string from src-tauri/src/brand.rs is hardcoded outside brand.rs / src/brand.ts.
 set -euo pipefail
 cd "$(dirname "$0")/.."

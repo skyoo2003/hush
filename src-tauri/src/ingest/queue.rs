@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Index jobs, deduplicated by path, run by `parse_workers` threads (stat, hash, parse,
 //! chunk) feeding one embed-and-commit thread through a bounded channel. Each path is in
 //! the queue or in flight at most once: a job submitted while its path runs is held and

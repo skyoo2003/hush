@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Read-only: is the instance from the current run worth driving? Exit 0 = yes.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"

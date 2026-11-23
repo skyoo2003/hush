@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 use serde::Serialize;
 
 /// IPC boundary error. Messages must never contain paths, file names, queries or document text.

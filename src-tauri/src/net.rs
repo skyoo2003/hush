@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The single outbound HTTP client. Every request passes `AirGapGuard::check` first.
 
 pub mod error;

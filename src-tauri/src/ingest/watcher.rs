@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Watched folders -> index jobs. One actor thread owns the debouncer and the folder map;
 //! the debouncer's handler and the IPC side only send it messages. ADR-015.
 //!

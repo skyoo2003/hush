@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Text -> L2-normalized vectors. ADR-013: bge-small-en-v1.5 on candle CPU (Accelerate on macOS).
 //! Calls block; run them in `spawn_blocking` or a worker.
 

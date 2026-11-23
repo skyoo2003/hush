@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `ParsedDocument` -> `Vec<Chunk>`. Pure: no I/O.
 //!
 //! Offsets are `char` indices into `doc_text(doc)`. A chunk never spans blocks (a page, a

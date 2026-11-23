@@ -12,7 +12,7 @@ Thanks for helping. Locite indexes private documents entirely on-device, so ever
 
 ## Development setup
 
-You need Rust stable, Node.js 26, and pnpm. The crate currently builds only on macOS because of the keychain key provider.
+You need macOS on Apple Silicon, the Xcode Command Line Tools (`xcode-select --install`), [Rust](https://rustup.rs/) stable, Node.js 26, and pnpm 10. The crate builds only on macOS because of the keychain key provider and Vision OCR.
 
 ```sh
 pnpm install
@@ -31,19 +31,41 @@ export LOCITE_DEV_SIGN_IDENTITY=<SHA-1 or name>      # e.g. in ~/.zshrc
 
 `cargo run` and `pnpm tauri dev` start the app through `scripts/dev-sign.sh`, which re-signs it with that identity and a fixed identifier. Click "Always Allow" on the next prompt and it will not come back after rebuilds. With the variable unset, nothing changes.
 
-## Checks
+## Running tests and checks
 
-Run everything CI runs before you push:
+Run everything CI runs before you push. `pnpm build` comes before `cargo test` because the crate embeds the built frontend.
 
 ```sh
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
-bash scripts/check-brand.sh
+bash scripts/check-brand.sh        # brand strings only via brand.rs
+bash scripts/check-spdx.sh         # SPDX header on every source file (--fix adds it)
+node scripts/check-npm-licenses.mjs
 cd src-tauri
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-cargo deny check licenses
+cargo deny check                   # licenses, advisories, bans, sources
 ```
 
+Tests that need real model weights are `#[ignore]`d. Run `bash scripts/fetch-models.sh`, then `cargo test --release -- --ignored`.
+
+CI also checks DCO sign-off on every pull request commit (`scripts/check-dco.sh`) and scans the full history for secrets with [gitleaks](https://github.com/gitleaks/gitleaks).
+
+Every new source file starts with `// SPDX-License-Identifier: GPL-3.0-or-later` (`#` in shell scripts, after the shebang).
+
+## Bug reports
+
+Never paste real document content into bug reports. The same goes for queries, file names, paths, and keys. Reproduce the bug with a small sample file you made yourself, and attach that instead. Use the issue form, which asks for your macOS version and chip.
+
 ## Pull requests
+
+1. For anything bigger than a bug fix, agree on the design in an issue first.
+2. Fork the repository and branch from `main`.
+3. Make the change with its tests, and run the checks above.
+4. Open a pull request and fill in the template. Say whether it touches network code or adds a dependency.
+5. A maintainer reviews it against the absolute rules in [CLAUDE.md](CLAUDE.md). One maintainer approval and green CI are enough to merge. Pull requests are squash-merged.
+
+Workflows run on `pull_request` only, never `pull_request_target`, so pull requests from forks get a read-only token and no secrets.
+
+Guidelines:
 
 - Keep one logical change per pull request, with its tests in the same change.
 - Write commit messages in [Conventional Commits](https://www.conventionalcommits.org/) form with a scope, for example `feat(storage): ...` or `fix(rag): ...`.

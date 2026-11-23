@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Air-Gap mode. ON (the default) blocks every outbound request. OFF allows exactly one host per purpose.
 
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};

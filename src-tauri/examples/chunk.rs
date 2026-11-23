@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Prints a file's chunks as JSON: `cargo run --example chunk -- <file>`.
 //! Counts tokens with the default embedding model; run `scripts/fetch-models.sh` first.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Capture one Locite window (not the whole screen) into the current run dir.
 # Usage: shot.sh <main|quick-search> <name>   -> .verify/current/<name>.png
 set -euo pipefail

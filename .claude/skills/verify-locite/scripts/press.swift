@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Usage: swift press.swift <pid> <role> <title>
 // Performs AXPress on the first element with that AX role (e.g. AXCheckBox) and exact title.
 // Presses through Accessibility like VoiceOver does, so it needs no focus and sends no keystrokes.

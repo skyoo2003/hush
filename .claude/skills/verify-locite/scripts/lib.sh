@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Sourced by the verify-locite scripts. Brand values come from brand.rs (rule 9: never hardcode them).
 ROOT=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
 brand() { grep -E "^pub const $1:" "$ROOT/src-tauri/src/brand.rs" | grep -oE '"[^"]*"' | head -1 | tr -d '"'; }

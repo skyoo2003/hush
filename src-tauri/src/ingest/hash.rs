@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Change detection: stat first, hash only when the stat changed.
 
 use std::fs::File;

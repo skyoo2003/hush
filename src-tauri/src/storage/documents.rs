@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Document and chunk rows for the ingest pipeline. All of its SQL lives here.
 
 use std::time::{SystemTime, UNIX_EPOCH};

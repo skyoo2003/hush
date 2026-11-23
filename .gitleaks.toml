@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+# Model manifests pin public model files by SHA-256; the hashes look like API keys to generic-api-key.
+[[allowlists]]
+description = "SHA-256 pins of public model files"
+paths = ['''^models/[^/]+/manifest\.json$''']
+regexes = ['''^[0-9a-f]{64}$''']
+condition = "AND"

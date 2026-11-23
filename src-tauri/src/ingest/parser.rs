@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! File -> `ParsedDocument`: the registry, and the TXT, Markdown, and DOCX parsers.
 //! Sync on purpose: callers run it in `spawn_blocking`.
 

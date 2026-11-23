@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Model-check AirGap.tla: each config × each invariant, compared with the expected results below.
 # Usage: verification/airgap/run.sh [-v]   (-v prints TLC's counterexample for every FAIL)
 # Exit 0 only when every result matches EXPECTED. Needs Java 11+; fetches a pinned TLC once.

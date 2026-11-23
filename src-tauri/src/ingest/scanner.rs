@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Folder walk -> what to index, reindex, and delete, compared with the DB by stat.
 //! Reads only directory entries and metadata, never file content.
 

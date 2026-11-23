@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! One file -> stored chunks: scope, stat, hash, parse, chunk, embed, write.
 //! Sync on purpose: callers run it in `spawn_blocking` or a worker thread. This is the one
 //! ingest file that calls storage. `prepare`, `embed`, and `commit` are the stages the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! PDF -> `ParsedDocument` through PDFium: per-word spans, scan detection, OCR fallback.
 //! Sync on purpose: callers run it in `spawn_blocking`.
 

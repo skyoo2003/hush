@@ -36,7 +36,7 @@ Maintainers tag releases from `main` after CI passes. Every release ships its fu
 
 - The project is licensed under [GPL-3.0-or-later](LICENSE).
 - Contributions are accepted under the same license and signed off under the [Developer Certificate of Origin](https://developercertificate.org/). There is no CLA, so copyright stays with each contributor and the project cannot be relicensed without their consent.
-- Every dependency must use a GPL-3.0-compatible license. `cargo deny check licenses` enforces this for Rust crates in CI.
+- Every dependency must use a GPL-3.0-compatible license. CI enforces this with `cargo deny check` for Rust crates and `scripts/check-npm-licenses.mjs` for pnpm packages, both reading the allow list in `src-tauri/deny.toml`. CI also checks SPDX headers, DCO sign-off on pull requests, and the full history for secrets.
 
 ## Funding
 

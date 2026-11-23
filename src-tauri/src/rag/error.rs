@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 use crate::security::error::SecurityError;
 
 /// Messages never carry paths, document text, or queries.
