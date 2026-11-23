@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "Main window: folders, settings, Air-Gap toggle, models, pack export.",
+  "description": "Main window: folders and index progress, settings, Air-Gap toggle, models, pack export.",
   "windows": ["main"],
   "permissions": [
     "allow-list-folders",
@@ -11,6 +11,8 @@
     "allow-get-settings",
     "allow-set-air-gap",
     "allow-list-models",
-    "allow-export-pack"
+    "allow-export-pack",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

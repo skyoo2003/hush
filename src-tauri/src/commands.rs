@@ -2,6 +2,9 @@
 //! IPC entry points. Order inside each command: service call, then AppError mapping.
 //! Which window may call which command is decided by `capabilities/*.json` (Tauri ACL).
 
+use std::io::Write;
+use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -16,7 +19,8 @@ use crate::ingest::watcher::{self, AddedFolder, FolderWatcher};
 use crate::net;
 use crate::rag::hybrid::{SearchMode, SearchResults, SearchService};
 use crate::rag::vector_store::SearchFilter;
-use crate::storage::db::Db;
+use crate::security::paths::ScopedPath;
+use crate::storage::db::{ChunkId, Db};
 use crate::storage::documents::FolderInfo;
 
 // Quick-search window set.
@@ -59,14 +63,72 @@ pub async fn search<R: Runtime>(
     .map_err(|_| AppError::internal("search task failed"))?
 }
 
+/// Opens the file behind a search hit in its default app. The webview passes only the chunk id.
 #[tauri::command]
-pub fn open_source() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
+pub async fn open_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app
+            .try_state::<Arc<Db>>()
+            .ok_or_else(|| AppError::internal("storage is not open"))?;
+        let (root, rel) = db
+            .chunk_file(ChunkId(chunk_id))
+            .map_err(|_| AppError::internal("source could not be read"))?
+            .ok_or_else(source_not_found)?;
+        let path =
+            ScopedPath::new(Path::new(&root), Path::new(&rel)).map_err(|_| source_not_found())?;
+        // The path is canonical and absolute, so `open` cannot read it as a flag.
+        let ok = Command::new("/usr/bin/open")
+            .arg(path.as_path())
+            .status()
+            .is_ok_and(|s| s.success());
+        if ok {
+            Ok(())
+        } else {
+            Err(AppError::internal("source could not be opened"))
+        }
+    })
+    .await
+    .map_err(|_| AppError::internal("open source task failed"))?
 }
 
+/// Puts `text` on the clipboard. The webview formats it from the hit it shows.
 #[tauri::command]
-pub fn copy_citation() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
+pub async fn copy_citation(text: String) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        pbcopy(&text).map_err(|_| AppError {
+            code: ErrorCode::ClipboardFailed,
+            message: "citation could not be copied".into(),
+        })
+    })
+    .await
+    .map_err(|_| AppError::internal("copy citation task failed"))?
+}
+
+fn pbcopy(text: &str) -> std::io::Result<()> {
+    // pbcopy reads stdin in the locale's encoding; an app bundle has no LANG, so set UTF-8.
+    let mut child = Command::new("/usr/bin/pbcopy")
+        .env("LANG", "en_US.UTF-8")
+        .stdin(Stdio::piped())
+        .spawn()?;
+    let written = child
+        .stdin
+        .take()
+        .map(|mut stdin| stdin.write_all(text.as_bytes()))
+        .unwrap_or(Ok(()));
+    let status = child.wait()?;
+    written?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("pbcopy failed"))
+    }
+}
+
+fn source_not_found() -> AppError {
+    AppError {
+        code: ErrorCode::SourceNotFound,
+        message: "source file not found".into(),
+    }
 }
 
 #[tauri::command]
@@ -191,4 +253,22 @@ pub fn list_models() -> Result<(), AppError> {
 #[tauri::command]
 pub fn export_pack() -> Result<(), AppError> {
     Err(AppError::not_implemented())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Overwrites the clipboard, so it runs only on request.
+    #[test]
+    #[ignore]
+    fn pbcopy_round_trips_utf8() {
+        let text = "\u{bb38}\u{c11c} \u{2014} p. 3";
+        pbcopy(text).unwrap();
+        let out = Command::new("/usr/bin/pbpaste")
+            .env("LANG", "en_US.UTF-8")
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8(out.stdout).unwrap(), text);
+    }
 }

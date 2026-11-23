@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 
-use super::db::{Db, DocId};
+use super::db::{ChunkId, Db, DocId};
 use super::error::StorageError;
 use crate::ingest::chunker::Chunk;
 use crate::ingest::hash::{FileStat, FileState};
@@ -314,6 +314,21 @@ impl Db {
         })
     }
 
+    /// Folder root and relative path of the document holding `chunk`; `None` when the chunk is gone.
+    pub fn chunk_file(&self, chunk: ChunkId) -> Result<Option<(String, String)>, StorageError> {
+        self.read(|c| {
+            c.query_row(
+                "SELECT f.path, d.rel_path FROM chunks c
+                 JOIN documents d ON d.id = c.doc_id
+                 JOIN folders f ON f.id = d.folder_id
+                 WHERE c.id = ?1",
+                [chunk.0],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+        })
+    }
+
     /// `code` is a fixed identifier such as `parse_failed`, never a message with document data.
     pub fn mark_error(&self, doc: DocId, code: &str) -> Result<(), StorageError> {
         self.write(|c| {
@@ -323,5 +338,41 @@ impl Db {
             )
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::db::tests::temp_db;
+
+    #[test]
+    fn chunk_file_finds_the_folder_and_relative_path() {
+        let (_dir, db) = temp_db();
+        let chunk = db
+            .write(|c| {
+                c.execute(
+                    "INSERT INTO folders(path, added_at, status) VALUES ('/root', 0, 'active')",
+                    [],
+                )?;
+                c.execute(
+                    "INSERT INTO documents(folder_id, rel_path, ext, status)
+                     VALUES (last_insert_rowid(), 'sub/a.txt', 'txt', 'indexed')",
+                    [],
+                )?;
+                c.execute(
+                    "INSERT INTO chunks(doc_id, chunk_index, start_offset, end_offset, text)
+                     VALUES (last_insert_rowid(), 0, 0, 1, 'x')",
+                    [],
+                )?;
+                Ok(ChunkId(c.last_insert_rowid()))
+            })
+            .unwrap();
+
+        assert_eq!(
+            db.chunk_file(chunk).unwrap(),
+            Some(("/root".to_owned(), "sub/a.txt".to_owned()))
+        );
+        assert_eq!(db.chunk_file(ChunkId(chunk.0 + 1)).unwrap(), None);
     }
 }

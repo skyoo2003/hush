@@ -23,6 +23,10 @@ pub enum ErrorCode {
     FolderOverlap,
     FolderNotFound,
     FolderUnreadable,
+    /// The result's file was moved, deleted, or is no longer inside its folder.
+    SourceNotFound,
+    /// The citation could not be put on the clipboard.
+    ClipboardFailed,
 }
 
 impl AppError {
