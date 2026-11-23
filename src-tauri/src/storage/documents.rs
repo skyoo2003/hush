@@ -8,6 +8,7 @@ use super::db::{Db, DocId};
 use super::error::StorageError;
 use crate::ingest::chunker::Chunk;
 use crate::ingest::hash::{FileStat, FileState};
+use crate::rag::vector_store::{shape_ok, to_blob};
 
 fn now() -> i64 {
     SystemTime::now()
@@ -20,40 +21,42 @@ fn size_sql(size: u64) -> i64 {
     i64::try_from(size).unwrap_or(i64::MAX)
 }
 
-/// Inserts `chunks` for `doc` inside the caller's transaction. Returns the new row ids in order.
+/// Inserts `chunks` for `doc` and their vectors inside the caller's transaction.
+/// Callers check `shape_ok` first; `zip` would drop unmatched rows silently.
 pub(crate) fn insert_chunks(
     tx: &rusqlite::Transaction,
     doc: DocId,
     chunks: &[Chunk],
-) -> rusqlite::Result<Vec<i64>> {
+    embeddings: &[Vec<f32>],
+) -> rusqlite::Result<()> {
+    let mut insert_vec =
+        tx.prepare("INSERT INTO vec_chunks(chunk_id, embedding) VALUES (?1, ?2)")?;
     let mut insert = tx.prepare(
         "INSERT INTO chunks(doc_id, chunk_index, page, section_path, start_offset,
                             end_offset, bbox_json, text, sha256)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
-    chunks
-        .iter()
-        .map(|ch| {
-            let bbox = ch
-                .bbox
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-            insert.execute(params![
-                doc.0,
-                ch.chunk_index,
-                ch.page,
-                ch.section_path,
-                ch.start_offset,
-                ch.end_offset,
-                bbox,
-                ch.text,
-                &ch.sha256[..],
-            ])?;
-            Ok(tx.last_insert_rowid())
-        })
-        .collect()
+    for (ch, e) in chunks.iter().zip(embeddings) {
+        let bbox = ch
+            .bbox
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        insert.execute(params![
+            doc.0,
+            ch.chunk_index,
+            ch.page,
+            ch.section_path,
+            ch.start_offset,
+            ch.end_offset,
+            bbox,
+            ch.text,
+            &ch.sha256[..],
+        ])?;
+        insert_vec.execute(params![tx.last_insert_rowid(), to_blob(e)])?;
+    }
+    Ok(())
 }
 
 impl Db {
@@ -120,20 +123,24 @@ impl Db {
         Ok(())
     }
 
-    /// One transaction: the doc's chunks are replaced, the doc is marked indexed, and one
-    /// version row is added.
+    /// One transaction: the doc's chunks and their vectors are replaced, the doc is marked
+    /// indexed, and one version row is added. A shape mismatch writes nothing.
     pub fn replace_chunks(
         &self,
         doc: DocId,
         state: &FileState,
         needs_ocr: bool,
         chunks: &[Chunk],
+        embeddings: &[Vec<f32>],
     ) -> Result<(), StorageError> {
+        if !shape_ok(chunks, embeddings) {
+            return Err(StorageError::EmbeddingShape);
+        }
         let (size, mtime, now) = (size_sql(state.stat.size), state.stat.mtime_ns, now());
         self.write(|c| {
             let tx = c.transaction()?;
             tx.execute("DELETE FROM chunks WHERE doc_id = ?1", [doc.0])?;
-            insert_chunks(&tx, doc, chunks)?;
+            insert_chunks(&tx, doc, chunks, embeddings)?;
             tx.execute(
                 "UPDATE documents SET sha256 = ?2, size = ?3, mtime = ?4, status = 'indexed',
                         error_code = NULL, indexed_at = ?5, needs_ocr = ?6
@@ -145,6 +152,18 @@ impl Db {
                 params![doc.0, &state.sha256[..], size, mtime, now],
             )?;
             tx.commit()
+        })
+    }
+
+    /// Registers `path` as an active folder, or reactivates it. Returns its id.
+    pub fn upsert_folder(&self, path: &str, label: &str) -> Result<i64, StorageError> {
+        self.write(|c| {
+            c.query_row(
+                "INSERT INTO folders(path, label, added_at, status) VALUES (?1, ?2, ?3, 'active')
+                 ON CONFLICT(path) DO UPDATE SET status = 'active' RETURNING id",
+                params![path, label, now()],
+                |r| r.get(0),
+            )
         })
     }
 

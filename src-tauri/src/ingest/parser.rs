@@ -118,6 +118,11 @@ impl ParserRegistry {
         self
     }
 
+    /// `ext` is lower-cased, without the dot.
+    pub fn supports(&self, ext: &str) -> bool {
+        self.parsers.iter().any(|(_, p)| p.supports(ext))
+    }
+
     pub fn parse(&self, path: &ScopedPath) -> Result<ParsedDocument, ParseError> {
         let ext = path
             .as_path()

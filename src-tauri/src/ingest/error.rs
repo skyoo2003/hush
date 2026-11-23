@@ -73,6 +73,8 @@ pub enum PipelineError {
     Io(#[source] std::io::Error),
     #[error(transparent)]
     Parse(#[from] ParseError),
+    #[error("embedding failed")]
+    Embed(#[source] crate::rag::error::RagError),
     #[error(transparent)]
     Storage(#[from] crate::storage::error::StorageError),
 }

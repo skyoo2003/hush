@@ -13,6 +13,8 @@ pub enum StorageError {
     Rng,
     #[error("database schema version {0} is newer than this app")]
     SchemaTooNew(i64),
+    #[error("embedding count or dimension does not match")]
+    EmbeddingShape,
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]

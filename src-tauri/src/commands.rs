@@ -2,17 +2,52 @@
 //! Which window may call which command is decided by `capabilities/*.json` (Tauri ACL).
 
 use serde::Serialize;
-use tauri::{Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
-use crate::error::AppError;
+use crate::error::{AppError, ErrorCode};
 use crate::net;
+use crate::rag::hybrid::{SearchMode, SearchResults, SearchService};
+use crate::rag::vector_store::SearchFilter;
 use crate::storage::db::Db;
 
 // Quick-search window set.
 
+const DEFAULT_LIMIT: u32 = 10;
+const MAX_LIMIT: u32 = 50;
+
 #[tauri::command]
-pub fn search() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
+pub async fn search<R: Runtime>(
+    app: AppHandle<R>,
+    query: String,
+    limit: Option<u32>,
+) -> Result<SearchResults, AppError> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
+    tauri::async_runtime::spawn_blocking(move || {
+        let service = app
+            .try_state::<SearchService>()
+            .ok_or_else(AppError::model_missing)?;
+        let db = app
+            .try_state::<Db>()
+            .ok_or_else(|| AppError::internal("storage is not open"))?;
+        service
+            .search(
+                &db,
+                &query,
+                SearchMode::Hybrid,
+                &SearchFilter::default(),
+                limit,
+            )
+            .map_err(|e| {
+                // RagError messages are fixed and carry no query text.
+                tracing::warn!(error = %e, "search failed");
+                AppError {
+                    code: ErrorCode::SearchFailed,
+                    message: "search failed".into(),
+                }
+            })
+    })
+    .await
+    .map_err(|_| AppError::internal("search task failed"))?
 }
 
 #[tauri::command]
