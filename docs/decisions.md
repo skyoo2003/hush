@@ -535,4 +535,4 @@ Measured with `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml
 - A folder that is unavailable at launch and is not under `/Volumes` is only noticed again at the next launch, or when an event touches its root or an ancestor that is watched.
 - A folder added before the embedding model loads has no watcher yet; it is scanned at the next launch.
 - A job already running when a folder is removed may fail against the deleted folder (foreign keys reject it) and counts as failed. Nothing is written for the removed folder.
-- `pipeline::commit` still deletes a document whose file vanished between parse and commit; on an unplugged drive that can drop the one document in flight. The remount rescan indexes it again.
+- `pipeline::commit` deletes a document whose file vanished between parse and commit only while the folder root still exists. A missing root returns `Commit::Unavailable` and writes nothing, so the document in flight on an unplugged drive is kept.
