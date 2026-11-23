@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
+import { APP_NAME } from "../brand";
 import type { AddedFolder } from "../ipc/AddedFolder";
 import type { AppError } from "../ipc/AppError";
 import type { FolderInfo } from "../ipc/FolderInfo";
@@ -18,7 +19,7 @@ function errorText(e: unknown): string {
     case "folder_not_found":
       return "That folder no longer exists.";
     case "folder_unreadable":
-      return "Locite cannot read that folder. Check its permissions.";
+      return `${APP_NAME} cannot read that folder. Check its permissions.`;
     default:
       return "Something went wrong. Try again.";
   }
