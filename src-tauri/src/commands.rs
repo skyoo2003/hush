@@ -6,11 +6,17 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
+use tauri_plugin_dialog::DialogExt;
+
 use crate::error::{AppError, ErrorCode};
+use crate::ingest::error::WatchError;
+use crate::ingest::queue::{IndexProgress, IndexQueue};
+use crate::ingest::watcher::{self, AddedFolder, FolderWatcher};
 use crate::net;
 use crate::rag::hybrid::{SearchMode, SearchResults, SearchService};
 use crate::rag::vector_store::SearchFilter;
 use crate::storage::db::Db;
+use crate::storage::documents::FolderInfo;
 
 // Quick-search window set.
 
@@ -72,8 +78,83 @@ pub fn hide_window<R: Runtime>(window: WebviewWindow<R>) -> Result<(), AppError>
 // Main window set.
 
 #[tauri::command]
-pub fn list_folders() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
+pub fn list_folders(db: State<'_, Arc<Db>>) -> Result<Vec<FolderInfo>, AppError> {
+    db.folders()
+        .map_err(|_| AppError::internal("folders could not be read"))
+}
+
+/// Opens the native folder picker; the webview never passes a path. `None` when cancelled.
+#[tauri::command]
+pub async fn add_watched_folder<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<Option<AddedFolder>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(picked) = app.dialog().file().blocking_pick_folder() else {
+            return Ok(None);
+        };
+        let path = picked
+            .into_path()
+            .map_err(|_| folder_error(WatchError::Unreadable))?;
+        let db = app
+            .try_state::<Arc<Db>>()
+            .ok_or_else(|| AppError::internal("storage is not open"))?;
+        let watcher = app.try_state::<FolderWatcher>();
+        watcher::add_folder(&db, watcher.as_deref(), &path)
+            .map(Some)
+            .map_err(folder_error)
+    })
+    .await
+    .map_err(|_| AppError::internal("add folder task failed"))?
+}
+
+#[tauri::command]
+pub async fn remove_watched_folder<R: Runtime>(app: AppHandle<R>, id: i64) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app
+            .try_state::<Arc<Db>>()
+            .ok_or_else(|| AppError::internal("storage is not open"))?;
+        let watcher = app.try_state::<FolderWatcher>();
+        let queue = app.try_state::<Arc<IndexQueue>>();
+        watcher::remove_folder(&db, watcher.as_deref(), queue.as_deref().map(|q| &**q), id)
+            .map_err(folder_error)
+    })
+    .await
+    .map_err(|_| AppError::internal("remove folder task failed"))?
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct IndexStatus {
+    /// False until the embedding model loads and the queue starts.
+    pub indexing: bool,
+    pub progress: IndexProgress,
+}
+
+#[tauri::command]
+pub fn get_index_status<R: Runtime>(app: AppHandle<R>) -> IndexStatus {
+    let queue = app.try_state::<Arc<IndexQueue>>();
+    IndexStatus {
+        indexing: queue.is_some(),
+        progress: queue.map(|q| q.progress()).unwrap_or_default(),
+    }
+}
+
+/// WatchError messages are fixed and carry no paths.
+fn folder_error(e: WatchError) -> AppError {
+    let code = match e {
+        WatchError::Overlap => ErrorCode::FolderOverlap,
+        WatchError::NotFound => ErrorCode::FolderNotFound,
+        WatchError::Unreadable => ErrorCode::FolderUnreadable,
+        _ => {
+            tracing::warn!(error = %e, "folder operation failed");
+            return AppError::internal("folder operation failed");
+        }
+    };
+    AppError {
+        code,
+        message: e.to_string(),
+    }
 }
 
 #[derive(Debug, Serialize)]

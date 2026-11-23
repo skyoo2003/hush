@@ -82,3 +82,20 @@ pub enum PipelineError {
     #[error("invalid exclude pattern")]
     Exclude(#[source] ignore::Error),
 }
+
+/// Watcher and folder-registration failures. Messages never carry paths.
+#[derive(Debug, thiserror::Error)]
+pub enum WatchError {
+    #[error("folder overlaps a watched folder")]
+    Overlap,
+    #[error("folder not found")]
+    NotFound,
+    #[error("folder is not a readable directory")]
+    Unreadable,
+    #[error(transparent)]
+    Storage(#[from] crate::storage::error::StorageError),
+    #[error(transparent)]
+    Pipeline(#[from] PipelineError),
+    #[error("file watcher failed")]
+    Notify(#[source] notify_debouncer_full::notify::Error),
+}

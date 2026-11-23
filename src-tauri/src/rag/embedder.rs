@@ -2,7 +2,10 @@
 //! Calls block; run them in `spawn_blocking` or a worker.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use candle_core::{DType, Device, Tensor, D};
 use candle_nn::VarBuilder;
@@ -16,6 +19,9 @@ use crate::security::paths::ScopedPath;
 
 pub const BATCH: usize = 32;
 const MAX_TOKENS: usize = 512;
+/// The model's weights are dropped after this long without an embed, and reloaded on the next.
+pub const MODEL_IDLE: Duration = Duration::from_secs(10 * 60);
+const WEIGHTS: &str = "model.safetensors";
 
 pub trait Embedder: Send + Sync {
     fn dim(&self) -> usize;
@@ -63,10 +69,20 @@ struct Manifest {
     files: HashMap<String, String>,
 }
 
+/// The tokenizer stays loaded (the chunker counts tokens with it); the model idles out.
 pub struct BertEmbedder {
     spec: &'static ModelSpec,
-    model: BertModel,
+    config: Config,
     tokenizer: Tokenizer,
+    models_dir: PathBuf,
+    /// From the manifest at load time; a reload must match it.
+    weights_sha256: String,
+    model: IdleSlot<BertModel>,
+}
+
+fn read_model_file(models_dir: &Path, id: &str, name: &str) -> Result<Vec<u8>, RagError> {
+    let p = ScopedPath::new(models_dir, &Path::new(id).join(name))?;
+    std::fs::read(p.as_path()).map_err(RagError::Io)
 }
 
 impl BertEmbedder {
@@ -77,10 +93,7 @@ impl BertEmbedder {
             .iter()
             .find(|s| s.id == id)
             .ok_or(RagError::UnknownModel)?;
-        let read = |name: &str| {
-            let p = ScopedPath::new(models_dir, &Path::new(spec.id).join(name))?;
-            std::fs::read(p.as_path()).map_err(RagError::Io)
-        };
+        let read = |name: &str| read_model_file(models_dir, spec.id, name);
         let manifest: Manifest =
             serde_json::from_slice(&read("manifest.json")?).map_err(RagError::Manifest)?;
         let verified = |name: &'static str| {
@@ -94,12 +107,13 @@ impl BertEmbedder {
         };
         let config = verified("config.json")?;
         let tokenizer = verified("tokenizer.json")?;
-        let weights = verified("model.safetensors")?;
+        let weights = verified(WEIGHTS)?;
+        let weights_sha256 = hex(&Sha256::digest(&weights));
 
         let config: Config = serde_json::from_slice(&config).map_err(RagError::Manifest)?;
         let mut tokenizer = Tokenizer::from_bytes(tokenizer).map_err(|_| RagError::Tokenizer)?;
-        let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &Device::Cpu)?;
-        let model = BertModel::load(vb, &config)?;
+        let model = IdleSlot::new(MODEL_IDLE);
+        model.get(|| build_model(weights, &config))?;
         tokenizer.with_padding(Some(PaddingParams::default()));
         tokenizer
             .with_truncation(Some(TruncationParams {
@@ -109,12 +123,25 @@ impl BertEmbedder {
             .map_err(|_| RagError::Tokenizer)?;
         Ok(Self {
             spec,
-            model,
+            config,
             tokenizer,
+            models_dir: models_dir.to_owned(),
+            weights_sha256,
+            model,
         })
     }
 
+    /// Re-reads the weights through `ScopedPath` and checks them against the load-time hash.
+    fn reload_model(&self) -> Result<BertModel, RagError> {
+        let data = read_model_file(&self.models_dir, self.spec.id, WEIGHTS)?;
+        if hex(&Sha256::digest(&data)) != self.weights_sha256 {
+            return Err(RagError::HashMismatch(WEIGHTS));
+        }
+        build_model(data, &self.config)
+    }
+
     fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, RagError> {
+        let model = self.model.get(|| self.reload_model())?;
         let mut out = Vec::with_capacity(texts.len());
         for batch in texts.chunks(BATCH) {
             let enc = self
@@ -128,7 +155,7 @@ impl BertEmbedder {
                 .collect();
             let ids = Tensor::new(ids, &Device::Cpu)?;
             let mask = Tensor::new(mask, &Device::Cpu)?;
-            let hidden = self.model.forward(&ids, &ids.zeros_like()?, Some(&mask))?;
+            let hidden = model.forward(&ids, &ids.zeros_like()?, Some(&mask))?;
             let pooled = match self.spec.pooling {
                 Pooling::Cls => hidden.narrow(1, 0, 1)?.squeeze(1)?,
                 Pooling::Mean => {
@@ -175,6 +202,108 @@ impl TokenCounter for BertEmbedder {
         self.tokenizer
             .encode_fast(t, true)
             .map_or(usize::MAX, |e| e.len())
+    }
+}
+
+fn build_model(weights: Vec<u8>, config: &Config) -> Result<BertModel, RagError> {
+    let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &Device::Cpu)?;
+    Ok(BertModel::load(vb, config)?)
+}
+
+/// A value loaded on demand and dropped after `idle` without a `get`. One thread per slot
+/// waits on a condvar for the deadline; it never polls.
+struct IdleSlot<T> {
+    shared: Arc<SlotShared<T>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+struct SlotShared<T> {
+    state: Mutex<SlotState<T>>,
+    wake: Condvar,
+    idle: Duration,
+}
+
+struct SlotState<T> {
+    value: Option<Arc<T>>,
+    last_use: Instant,
+    stop: bool,
+}
+
+impl<T: Send + Sync + 'static> IdleSlot<T> {
+    fn new(idle: Duration) -> Self {
+        let shared = Arc::new(SlotShared {
+            state: Mutex::new(SlotState {
+                value: None,
+                last_use: Instant::now(),
+                stop: false,
+            }),
+            wake: Condvar::new(),
+            idle,
+        });
+        let s = shared.clone();
+        // shortcut: no thread means the value never idles out; spawn only fails when the OS is out of threads.
+        let thread = std::thread::Builder::new()
+            .name("model-idle".into())
+            .spawn(move || s.evict_loop())
+            .ok();
+        Self { shared, thread }
+    }
+
+    /// The value, loaded by `load` if it was dropped. Callers use the `Arc` without the lock.
+    fn get<E>(&self, load: impl FnOnce() -> Result<T, E>) -> Result<Arc<T>, E> {
+        let mut st = self.shared.lock();
+        st.last_use = Instant::now();
+        if let Some(v) = &st.value {
+            return Ok(v.clone());
+        }
+        // Loads under the lock, so concurrent callers never load twice.
+        let v = Arc::new(load()?);
+        st.value = Some(v.clone());
+        drop(st);
+        self.shared.wake.notify_all();
+        Ok(v)
+    }
+
+    #[cfg(test)]
+    fn is_loaded(&self) -> bool {
+        self.shared.lock().value.is_some()
+    }
+}
+
+impl<T> SlotShared<T> {
+    fn lock(&self) -> MutexGuard<'_, SlotState<T>> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn evict_loop(&self) {
+        let mut st = self.lock();
+        while !st.stop {
+            st = match st.value {
+                None => self.wake.wait(st).unwrap_or_else(|e| e.into_inner()),
+                Some(_) => {
+                    let due = st.last_use + self.idle;
+                    let now = Instant::now();
+                    if now >= due {
+                        st.value = None;
+                        continue;
+                    }
+                    self.wake
+                        .wait_timeout(st, due - now)
+                        .unwrap_or_else(|e| e.into_inner())
+                        .0
+                }
+            };
+        }
+    }
+}
+
+impl<T> Drop for IdleSlot<T> {
+    fn drop(&mut self) {
+        self.shared.lock().stop = true;
+        self.shared.wake.notify_all();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -289,6 +418,39 @@ mod tests {
         ("tokenizer.json", b"{}"),
         ("model.safetensors", b"not weights"),
     ];
+
+    #[test]
+    fn idle_slot_drops_the_value_and_reloads_it() {
+        let loads = std::sync::atomic::AtomicUsize::new(0);
+        let load = || {
+            loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok::<_, ()>(vec![1u8; 16])
+        };
+        let slot = IdleSlot::new(Duration::from_millis(50));
+        assert!(!slot.is_loaded());
+        let held = slot.get(load).unwrap();
+        assert!(slot.get(load).is_ok());
+        assert_eq!(loads.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let end = Instant::now() + Duration::from_secs(5);
+        while slot.is_loaded() {
+            assert!(Instant::now() < end, "value never dropped");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // A caller that still holds it keeps using it.
+        assert_eq!(held.len(), 16);
+        assert!(slot.get(load).is_ok());
+        assert_eq!(loads.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert!(
+            slot.get(|| Err::<Vec<u8>, _>("no")).is_ok(),
+            "loaded, so not called"
+        );
+        let started = Instant::now();
+        drop(slot);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "drop stops the thread"
+        );
+    }
 
     #[test]
     fn unknown_model_is_rejected() {

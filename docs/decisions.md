@@ -505,3 +505,34 @@ Measured with `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml
 | `tokio-util` 0.7 (`default-features = false`) | `CancellationToken`, usable from both threads and async code. Already in the tree through `reqwest`. | MIT | None |
 
 `cargo deny check licenses` passes without widening the allowlist.
+
+## ADR-015. Folder watcher, folder availability, dialog-only add, and model idle unload
+
+- Date: 2026-11-23
+- Status: Accepted
+
+### Decision
+
+- `ingest::watcher::FolderWatcher` runs one actor thread. It owns a `notify-debouncer-full` debouncer (1.5 s, FSEvents on macOS) and the folder map. The debouncer's handler and the IPC side only send it messages on one `std::sync::mpsc` channel; the thread blocks on `recv`. At start it brings every registered folder in line with the disk and rescans the present ones, which replaces the startup rescan loop in `lib.rs`.
+- Each event path is handled by what is on disk now, not by the event kind: an admitted file gets a reindex job (the pipeline skips an unchanged hash), a directory rescans the folder (a moved-in directory brings no per-file events), and a missing path deletes every document at or under it. A rename reports both paths, so it falls out of the same rules. FSEvents keeps a recent file's "created" flag, and the debouncer reports a rename of a just-created file as a create at the new path only. In tests this hit a file created seconds before its rename in 7 of 8 runs. So each batch also deletes the documents whose file is gone from any directory that holds a touched path. An event with the rescan flag rescans the folders it touches, or every active folder if it has no paths. The watcher filters single paths with `scanner::Filter`, the same hidden, exclude, and extension rules as the walk.
+- Availability. A root that is missing (moved away, or its drive unplugged) marks the folder `unavailable` and keeps every document. A recursive watch on a volume's folder gets no event when the volume unmounts, so the watcher also watches `/Volumes` non-recursively: an unmount reports `/Volumes/<name>` removed and a remount reports it created. An event on a root or an ancestor of it reconciles the folder; a root that is back gets a fresh watch and a rescan. As a second guard, the queue's delete step does nothing while a job's root is missing.
+- Dialog-only add. `add_watched_folder` takes no path: Rust opens the native folder picker with `tauri-plugin-dialog`. No window is granted a dialog permission, so the webview cannot open a picker or pass a path itself. A folder that equals, contains, or is inside a registered folder (by path component) is rejected with `folder_overlap`. `/`, a top-level directory, the home folder, or an ancestor of it is added with the `broad_path` warning.
+- Idle workers block. Parse workers wait on the queue's condvar with no timeout when nothing waits for a retry. An outside cancel of the `CancellationToken` still wakes them: the queue polls `cancelled_owned()` once with a `Wake` that notifies the condvar. The progress thread blocks until something changed.
+- `BertEmbedder` keeps the config and tokenizer loaded and holds the model in an idle slot. The model is dropped after 10 minutes without an embed (`MODEL_IDLE`), and the next embed reloads `model.safetensors` through `ScopedPath` and checks it against the sha256 from load time. One thread per slot waits on a condvar for the deadline.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `notify-debouncer-full` 0.8 (pulls `notify` 9, `notify-types`, `file-id`, `xxhash-rust`) | File system events with debouncing and rename pairing; FSEvents on macOS. | MIT OR Apache-2.0 (`notify` CC0-1.0, `xxhash-rust` BSL-1.0) | None |
+| `tauri-plugin-dialog` 2 (pulls `rfd`, `tauri-plugin-fs`) | Native folder picker opened from Rust. The fs plugin is a library dependency only; it is not registered, so its commands do not exist. | Apache-2.0 OR MIT (`rfd` MIT) | None |
+
+`xxhash-rust` (used by `notify`'s poll watcher) is BSL-1.0, which was not on the `cargo deny` allowlist. The Boost Software License 1.0 is permissive and the FSF lists it as GPL-compatible, so `BSL-1.0` is added to `src-tauri/deny.toml`. `cargo deny check licenses` passes.
+
+### Consequences
+
+- A recently created file moved to another directory can report only the new path, so the old path's document stays until the next rescan (next launch, remount, or rescan event). A rename within one directory is covered by the sweep above.
+- A folder that is unavailable at launch and is not under `/Volumes` is only noticed again at the next launch, or when an event touches its root or an ancestor that is watched.
+- A folder added before the embedding model loads has no watcher yet; it is scanned at the next launch.
+- A job already running when a folder is removed may fail against the deleted folder (foreign keys reject it) and counts as failed. Nothing is written for the removed folder.
+- `pipeline::commit` deletes a document whose file vanished between parse and commit only while the folder root still exists. A missing root returns `Commit::Unavailable` and writes nothing, so the document in flight on an unplugged drive is kept.

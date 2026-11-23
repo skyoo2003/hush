@@ -31,6 +31,7 @@ pub struct Outcome {
 
 /// A parsed and chunked file, waiting for its embeddings and commit.
 pub struct Parsed {
+    root: std::path::PathBuf,
     path: ScopedPath,
     doc_id: DocId,
     state: FileState,
@@ -50,6 +51,8 @@ pub enum Commit {
     Changed,
     /// The file is gone; its document row was deleted.
     Gone(DocId),
+    /// The folder root is gone (an unplugged drive); nothing was written or deleted.
+    Unavailable,
 }
 
 /// Stat, hash, parse, and chunk. Creates a pending row for a new file. Idempotent: a crash
@@ -108,6 +111,7 @@ pub fn prepare(
     Ok(Prepared::Ready(Parsed {
         chunks: chunker::chunk(doc_id, &doc, cfg, counter),
         needs_ocr: doc.pages.iter().any(|p| p.needs_ocr),
+        root: root.to_path_buf(),
         path,
         doc_id,
         state,
@@ -134,6 +138,9 @@ pub fn embed(
 /// stat means the chunks may not match the stored hash.
 pub fn commit(db: &Db, parsed: Parsed, embeddings: &[Vec<f32>]) -> Result<Commit, PipelineError> {
     match hash::stat(&parsed.path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !parsed.root.exists() => {
+            return Ok(Commit::Unavailable);
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             db.delete_document(parsed.doc_id)?;
             return Ok(Commit::Gone(parsed.doc_id));
@@ -181,7 +188,9 @@ pub fn process_file(
         match commit(db, parsed, &embeddings)? {
             Commit::Done(o) => return Ok(o),
             Commit::Changed => continue,
-            Commit::Gone(_) => return Err(PipelineError::Io(std::io::ErrorKind::NotFound.into())),
+            Commit::Gone(_) | Commit::Unavailable => {
+                return Err(PipelineError::Io(std::io::ErrorKind::NotFound.into()))
+            }
         }
     }
     Err(PipelineError::Unstable)

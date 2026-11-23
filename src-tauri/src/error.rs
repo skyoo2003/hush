@@ -18,6 +18,10 @@ pub enum ErrorCode {
     /// The embedding model is not installed or failed its checks, so search is off.
     ModelMissing,
     SearchFailed,
+    /// The picked folder equals, contains, or is inside a watched folder.
+    FolderOverlap,
+    FolderNotFound,
+    FolderUnreadable,
 }
 
 impl AppError {
