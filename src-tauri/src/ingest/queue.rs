@@ -4,15 +4,18 @@
 //! runs after it.
 
 use std::collections::{HashMap, VecDeque};
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::task::{Context, Wake, Waker};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 
 use super::chunker::{ChunkerConfig, TokenCounter};
 use super::error::PipelineError;
@@ -25,8 +28,6 @@ use crate::storage::db::Db;
 pub const PROGRESS_EVENT: &str = "index://progress";
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_RETRIES: u32 = 3;
-/// Idle workers recheck cancel this often, since the token can be cancelled from outside.
-const POLL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reason {
@@ -190,6 +191,21 @@ struct Shared {
 pub struct IndexQueue {
     shared: Arc<Shared>,
     threads: Vec<JoinHandle<()>>,
+    /// Polled once with `CancelWaker`; kept alive so an outside cancel still wakes it.
+    _on_cancel: Pin<Box<WaitForCancellationFutureOwned>>,
+}
+
+/// Wakes the blocked threads when the token is cancelled from outside the queue.
+struct CancelWaker(Weak<Shared>);
+
+impl Wake for CancelWaker {
+    fn wake(self: Arc<Self>) {
+        if let Some(s) = self.0.upgrade() {
+            // Taking the lock orders this after any thread's cancel check, so none misses it.
+            let st = s.lock();
+            s.changed(st);
+        }
+    }
 }
 
 type Work = (IndexJob, u32, Parsed);
@@ -237,7 +253,15 @@ impl IndexQueue {
             "index-progress",
             Box::new(move || s.progress_loop(emit)),
         )?);
-        Ok(Self { shared, threads })
+        let mut on_cancel = Box::pin(shared.cancel.clone().cancelled_owned());
+        let waker = Waker::from(Arc::new(CancelWaker(Arc::downgrade(&shared))));
+        // Registers the waker; a token cancelled already is seen by every thread's own check.
+        let _ = on_cancel.as_mut().poll(&mut Context::from_waker(&waker));
+        Ok(Self {
+            shared,
+            threads,
+            _on_cancel: on_cancel,
+        })
     }
 
     /// Adds a job, or merges it into the one already queued for its path (the newer reason
@@ -293,6 +317,23 @@ impl IndexQueue {
         Ok(plan)
     }
 
+    /// Drops the folder's queued and delayed jobs and the reruns waiting on its running
+    /// jobs. A job already running finishes.
+    pub fn forget_folder(&self, folder_id: i64) {
+        let mut st = self.shared.lock();
+        st.order.retain(|k| k.0 != folder_id);
+        st.delayed.retain(|k| k.0 != folder_id);
+        st.slots.retain(|k, slot| match slot {
+            _ if k.0 != folder_id => true,
+            Slot::Queued(_) => false,
+            Slot::Running { rerun } => {
+                *rerun = None;
+                true
+            }
+        });
+        self.shared.changed(st);
+    }
+
     /// Workers finish the job they hold; no new job starts until `resume`.
     pub fn pause(&self) {
         let mut st = self.shared.lock();
@@ -344,7 +385,7 @@ impl IndexQueue {
             st = self
                 .shared
                 .wake
-                .wait_timeout(st, (end - now).min(POLL))
+                .wait_timeout(st, end - now)
                 .unwrap_or_else(|e| e.into_inner())
                 .0;
         }
@@ -367,8 +408,9 @@ impl Shared {
     }
 
     fn changed(&self, st: MutexGuard<'_, State>) {
-        drop(st);
+        // Set under the lock, so the progress thread cannot check it and then miss the wake.
         self.dirty.store(true, Ordering::Relaxed);
+        drop(st);
         self.wake.notify_all();
     }
 
@@ -396,12 +438,16 @@ impl Shared {
                     continue;
                 }
             }
-            let wait = next_due.map_or(POLL, |d| (d - now).min(POLL));
-            st = self
-                .wake
-                .wait_timeout(st, wait)
-                .unwrap_or_else(|e| e.into_inner())
-                .0;
+            // Nothing delayed: block until a submit, resume, budget change, or cancel.
+            st = match next_due {
+                Some(d) => {
+                    self.wake
+                        .wait_timeout(st, d - now)
+                        .unwrap_or_else(|e| e.into_inner())
+                        .0
+                }
+                None => self.wake.wait(st).unwrap_or_else(|e| e.into_inner()),
+            };
         }
     }
 
@@ -460,6 +506,10 @@ impl Shared {
     }
 
     fn delete(&self, job: &IndexJob) -> Result<(), PipelineError> {
+        // An unplugged drive looks like every file vanished; its documents must stay.
+        if !job.root.exists() {
+            return Ok(());
+        }
         if let Some((doc, _)) = self.svc.db.document_state(job.folder_id, &job.rel_path)? {
             self.svc.db.delete_document(doc)?;
         }
@@ -518,16 +568,26 @@ impl Shared {
         self.changed(st);
     }
 
+    /// Blocks until something changed, emits, then sleeps out the interval.
     fn progress_loop(&self, emit: impl Fn(IndexProgress)) {
         loop {
-            std::thread::sleep(PROGRESS_INTERVAL);
+            let mut st = self.lock();
+            while !self.dirty.load(Ordering::Relaxed) && !self.cancel.is_cancelled() {
+                st = self.wake.wait(st).unwrap_or_else(|e| e.into_inner());
+            }
             let stop = self.cancel.is_cancelled();
-            if self.dirty.swap(false, Ordering::Relaxed) {
-                emit(self.lock().progress());
+            let progress = self
+                .dirty
+                .swap(false, Ordering::Relaxed)
+                .then(|| st.progress());
+            drop(st);
+            if let Some(p) = progress {
+                emit(p);
             }
             if stop {
                 return;
             }
+            std::thread::sleep(PROGRESS_INTERVAL);
         }
     }
 }
@@ -823,6 +883,61 @@ mod tests {
             1
         );
         assert_eq!(count(&f.db, "SELECT count(*) FROM chunks"), 0);
+    }
+
+    #[test]
+    fn a_delete_under_a_missing_root_deletes_nothing() {
+        let f = fixture(&[("a.txt", "alpha")]);
+        let q = start(&f, Arc::new(FakeEmbedder), CancellationToken::new(), |_| {});
+        q.rescan(f.folder, &f.root).unwrap();
+        assert!(q.wait_idle(WAIT));
+        // What an unplugged drive looks like: the root itself is gone.
+        let unplugged = IndexJob {
+            root: f.root.join("missing").as_path().into(),
+            ..job(&f, "a.txt", Reason::Delete)
+        };
+        q.submit(unplugged.clone());
+        q.submit(IndexJob {
+            reason: Reason::Reindex,
+            ..unplugged
+        });
+        assert!(q.wait_idle(WAIT));
+        assert_eq!(count(&f.db, "SELECT count(*) FROM documents"), 1);
+        assert_eq!(count(&f.db, "SELECT count(*) FROM chunks"), 1);
+    }
+
+    #[test]
+    fn forget_folder_drops_only_that_folders_jobs() {
+        let f = fixture(&[("a.txt", "alpha")]);
+        let other = tempfile::tempdir().unwrap();
+        let (other, other_root) = register_folder(&f.db, other.path()).unwrap();
+        let q = start(&f, Arc::new(FakeEmbedder), CancellationToken::new(), |_| {});
+        q.pause();
+        q.submit(job(&f, "a.txt", Reason::New));
+        q.submit(job(&f, "b.txt", Reason::New));
+        q.submit(IndexJob {
+            folder_id: other,
+            root: other_root.as_path().into(),
+            rel_path: "c.txt".into(),
+            reason: Reason::New,
+        });
+        assert_eq!(q.progress().queued, 3);
+        q.forget_folder(f.folder);
+        assert_eq!(q.progress().queued, 1);
+    }
+
+    #[test]
+    fn an_outside_cancel_wakes_idle_threads() {
+        let f = fixture(&[]);
+        let cancel = CancellationToken::new();
+        let q = start(&f, Arc::new(FakeEmbedder), cancel.clone(), |_| {});
+        assert!(q.wait_idle(WAIT));
+        cancel.cancel();
+        let end = Instant::now() + Duration::from_secs(2);
+        while !q.threads.iter().all(JoinHandle::is_finished) {
+            assert!(Instant::now() < end, "threads still blocked after cancel");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]
