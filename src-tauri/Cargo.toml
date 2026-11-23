@@ -37,6 +37,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 sha2 = "0.10"
 unicode-segmentation = "1"
 tokio = { version = "1", default-features = false, features = ["sync", "macros"] }
+candle-core = "0.11.1"
+candle-nn = "0.11.1"
+candle-transformers = "0.11.1"
+tokenizers = { version = "0.23.2", default-features = false, features = ["fancy-regex"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
@@ -45,6 +49,9 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 ts-rs = "12"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { version = "0.11.1", features = ["accelerate"] }
+candle-nn = { version = "0.11.1", features = ["accelerate"] }
+candle-transformers = { version = "0.11.1", features = ["accelerate"] }
 security-framework = "3"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSString", "NSValue"] }

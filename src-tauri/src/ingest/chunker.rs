@@ -30,10 +30,12 @@ pub trait TokenCounter: Send + Sync {
     fn count(&self, text: &str) -> usize;
 }
 
-/// `ceil(chars / 4)`.
-// shortcut: chars/4 undercounts Hangul and CJK; replace with the embedding model's tokenizer when it lands.
+/// `ceil(chars / 4)`. Tests only: the app counts with the embedding model's tokenizer
+/// (`rag::embedder::BertEmbedder`), and chars/4 undercounts Hangul and CJK.
+#[cfg(test)]
 pub struct CharApprox;
 
+#[cfg(test)]
 impl TokenCounter for CharApprox {
     fn count(&self, text: &str) -> usize {
         text.chars().count().div_ceil(4)

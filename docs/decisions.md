@@ -331,7 +331,7 @@ PDFium wins because one engine gives char bounds, rendering, and path objects, a
 - `ingest::chunker::chunk` turns a `ParsedDocument` into chunks with `char` offsets into `doc_text` (units joined with `\n`). A chunk never spans a block: one page, one heading section, one run of `Line` units, or one image. Defaults: target 400, max 512, overlap 60 tokens.
 - Within a block, text is cut into atoms by paragraph, then sentence, then word (UAX #29 via `unicode-segmentation`), then raw chars. A piece is cut further only while it is over `max - ceil(1.2 x overlap)` tokens, so overlap plus one atom always fits. Atoms are packed greedily to the target.
 - Overlap starts at the latest sentence start (else word start, else char) whose suffix counts 0.8 to 1.2 x overlap. Chunks under 2 x overlap do not overlap.
-- Tokens are counted as `ceil(chars / 4)` (`CharApprox`) until the embedding model's tokenizer lands; this undercounts Hangul and CJK.
+- Tokens are counted as `ceil(chars / 4)` (`CharApprox`) until the embedding model's tokenizer lands; this undercounts Hangul and CJK. Superseded by ADR-013: the embedding model's tokenizer counts tokens.
 - `bbox` is one rect per text line of the chunk's spans, merged into at most 8.
 - `ingest::hash::decide` skips a file whose size and mtime are unchanged without reading it. A changed stat hashes the file (SHA-256, 64 KiB blocks); the same hash skips and stores the new stat.
 - `ingest::pipeline::process_file` is the one ingest file that calls storage. `Db::replace_chunks` replaces the chunks, marks the document indexed, and adds one `doc_versions` row in one transaction. A crash before it leaves `sha256` NULL, so the next run indexes the file again.
@@ -430,3 +430,55 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 
 - Existing dev installs start fresh. The old DB in `~/Library/Application Support/com.hush.app/`, the logs, and the keychain item `com.hush.app` are left in place, unused.
 - Anyone with `HUSH_DEV_SIGN_IDENTITY` set must rename it to `LOCITE_DEV_SIGN_IDENTITY`.
+
+## ADR-013. Embedding model and runtime: bge-small-en-v1.5 on candle
+
+- Date: 2026-11-23
+- Status: Accepted
+- Evidence: `spikes/embed_bench/` (throwaway spike, not product code). The task asked for this record as ADR-003, but that number is taken (storage, keychain), so it is ADR-013.
+
+### Decision
+
+- The default model is `bge-small-en-v1.5` (`rag::embedder::MODELS[0]`): 384 dimensions, CLS pooling, query prefix `Represent this sentence for searching relevant passages: `, no passage prefix. `multilingual-e5-small` is also registered (mean pooling, `query: ` and `passage: ` prefixes) but is not the default.
+- The runtime is candle 0.11.1 on the CPU, with Apple Accelerate BLAS on macOS. It is pure Rust and downloads nothing at build time or at runtime.
+- `trait Embedder: Send + Sync { dim, model_id, embed_passages, embed_query }`. Vectors are L2-normalized. Batches hold 32 texts, padded to the longest text, truncated at 512 tokens.
+- `BertEmbedder::load(models_dir, id)` reads `models_dir/{id}/` through `ScopedPath`, checks the sha256 of `config.json`, `tokenizer.json`, and `model.safetensors` against `manifest.json`, then builds the model from the bytes it hashed. A file that was swapped after the check is never loaded. A file missing from the manifest counts as a mismatch.
+- `BertEmbedder` implements the chunker's `TokenCounter`. It counts the passage prefix, the text, and the special tokens, so a chunk under `max_tokens` (512) is never truncated. `CharApprox` is now test-only.
+- `FakeEmbedder` (384 dimensions, word hashing, deterministic) stands in for the model in CI. Real-model tests are `#[ignore]`. Run `scripts/fetch-models.sh` first, then `cargo test --release -- --ignored`.
+- The dimension is 384, which matches `vec_chunks float[384]` from migration 0001, so no migration is needed.
+
+### Comparison
+
+Measured with `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml -- models` on an Apple M4 (10 cores, 16 GB). **No M1 was available, so M1 times are not measured.** Each run embeds 1,000 synthetic English chunks of about 1,600 chars, the chunker's 400-token target, in batches of 32. There is one warm-up batch, then 3 runs.
+
+| Model | License | Dim | `model.safetensors` | Tokens per chunk | 1,000 chunks, CPU + Accelerate (3 runs) | CPU, no Accelerate | Retrieval check R@1 / MRR | Termination: related / unrelated cosine |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| bge-small-en-v1.5 | MIT | 384 | 133 MB | 293 | 48.5 / 51.2 / 51.8 s | 100.6 / 107.8 / 118.0 s | 20/24, 0.892 | 0.600 / 0.360 |
+| multilingual-e5-small | MIT | 384 | 471 MB (+17 MB tokenizer) | 328 | 61.5 / 60.9 / 61.9 s | not run | 20/24, 0.900 | 0.834 / 0.728 |
+| nomic-embed-text-v1.5 | Apache-2.0 | 768 | 547 MB | 297 | 119.3 / 145.1 / 167.7 s | not run | 21/24, 0.925 | 0.682 / 0.416 |
+
+- All three licenses allow redistribution.
+- The retrieval check is 24 hand-written English query and passage pairs whose passages share vocabulary. Each query ranks all 24 passages. It is too small to separate the models: one query is the whole gap. It shows that each model runs correctly with its prefixes and pooling, but it is not a quality benchmark. Building that is the week-3 eval.
+- bge wins on speed, size, and English focus, and ties e5 on the check. e5's 250k-token vocabulary makes the file 3.5x larger for no English gain. nomic needs 768 dimensions, so `vec_chunks` would double in size and KNN time (ADR-001). It is also 2.5x slower, and its run-to-run spread (119 to 168 s) is larger than any quality gap measured here.
+- **What limits CPU time.** A 10 s `sample` of the bge run puts most threads in idle waits, about 2.5 of 10 cores busy. The busiest frames are scalar `libm erff`, the exact GELU, at about 3x the BLAS samples. Then come the elementwise divide and subtract, softmax reductions, and layer norm. The bound is candle's CPU elementwise kernels, not matrix multiplication.
+- **Metal.** candle 0.11.1 fails on Metal with `no metal implementation for layer-norm` for this BERT, so it was not measured.
+
+### Rejected
+
+- **ort (ONNX Runtime, optional CoreML EP).** It would probably remove the GELU and threading bound, but it was not measured. `ort` 2.0 is still a release candidate built for ONNX Runtime 1.31. Its default `download-binaries` fetches prebuilt C++ at build time, which conflicts with rule 10 and the no-auto-download rule. The alternative is shipping a separately built `libonnxruntime.dylib`. Revisit this if indexing time becomes a complaint, starting with a spike that links a pinned ONNX Runtime built from source.
+- **fastembed-rs.** It wraps ort, so it has the same binary problem, and it downloads models from the network by default.
+
+### Consequences
+
+- About 50 s per 1,000 chunks on an M4 means about 85 minutes for a 100k-chunk library, run in the background. M1 is expected to be slower (not measured).
+- The weights are not in git. `scripts/fetch-models.sh` downloads files pinned to a commit and checks them against the tracked manifests. Shipping models to users (ModelDownload or the offline kit) is separate work.
+- The tracked manifest is the trust anchor. Anyone who can replace both a model file and its manifest in the models folder can load other weights.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `candle-core`, `candle-nn`, `candle-transformers` 0.11.1 (`accelerate` on macOS) | BERT inference from safetensors. Pulls `gemm`, `half`, `safetensors`, `accelerate-src` (links the system Accelerate framework). | MIT OR Apache-2.0 | None |
+| `tokenizers` 0.23.2 (`default-features = false`, `fancy-regex`) | The model's tokenizer, for embedding and chunk token counts. No `http`/`hf-hub`, no `onig`, no progress bar. | Apache-2.0 | None |
+
+`cargo deny check licenses` passes without widening the allowlist.
