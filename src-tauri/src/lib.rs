@@ -119,6 +119,8 @@ fn start_indexing<R: Runtime>(
         // WatchError messages carry no paths.
         Err(e) => tracing::warn!(error = %e, "folder watcher did not start"),
     }
+    // Windows that asked get_index_status before this point still show "not indexing".
+    let _ = app.emit(PROGRESS_EVENT, queue.progress());
     app.manage(queue);
 }
 
