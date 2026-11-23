@@ -390,6 +390,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn delete_folder_clears_its_documents_and_everything_under_them() {
+        use crate::storage::documents::FolderStatus;
+        let (_dir, db) = temp_db();
+        let bad = insert_doc(&db, "a.txt", "alpha");
+        insert_doc(&db, "b.txt", "bravo");
+        db.mark_error(bad, "parse_failed").unwrap();
+        let folder = db.folders().unwrap().remove(0);
+        assert_eq!((folder.documents, folder.failed), (2, 1));
+        db.set_folder_status(folder.id, FolderStatus::Unavailable)
+            .unwrap();
+        assert_eq!(
+            db.folder(folder.id).unwrap().unwrap().status,
+            FolderStatus::Unavailable
+        );
+
+        db.delete_folder(folder.id).unwrap();
+
+        assert_eq!(db.folder(folder.id).unwrap(), None);
+        for table in [
+            "folders",
+            "documents",
+            "chunks",
+            "chunks_fts",
+            "vec_chunks",
+            "doc_versions",
+        ] {
+            assert_eq!(
+                count(&db, &format!("SELECT count(*) FROM {table}")),
+                0,
+                "{table}"
+            );
+        }
+    }
+
+    #[test]
     fn delete_document_clears_chunks_vectors_fts_and_versions() {
         let (_dir, db) = temp_db();
         let gone = insert_doc(&db, "a.txt", "alpha");

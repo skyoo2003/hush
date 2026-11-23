@@ -8,3 +8,4 @@ pub mod pdf;
 pub mod pipeline;
 pub mod queue;
 pub mod scanner;
+pub mod watcher;

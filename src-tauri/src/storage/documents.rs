@@ -3,6 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, OptionalExtension};
+use serde::Serialize;
 
 use super::db::{Db, DocId};
 use super::error::StorageError;
@@ -59,6 +60,62 @@ pub(crate) fn insert_chunks(
     Ok(())
 }
 
+/// Stored in `folders.status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum FolderStatus {
+    Active,
+    /// The folder is missing, e.g. its drive is unplugged. Its documents are kept.
+    Unavailable,
+}
+
+impl FolderStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FolderInfo {
+    #[cfg_attr(test, ts(type = "number"))]
+    pub id: i64,
+    /// Canonical path, shown only to the user who chose it.
+    pub path: String,
+    pub label: String,
+    pub status: FolderStatus,
+    pub documents: u32,
+    /// Documents whose last index attempt failed.
+    pub failed: u32,
+}
+
+const FOLDER_SELECT: &str = "SELECT f.id, f.path, coalesce(f.label, f.path), f.status,
+        (SELECT count(*) FROM documents d WHERE d.folder_id = f.id),
+        (SELECT count(*) FROM documents d WHERE d.folder_id = f.id AND d.status = 'error')
+    FROM folders f";
+
+fn folder_row(r: &rusqlite::Row) -> rusqlite::Result<FolderInfo> {
+    let status: String = r.get(3)?;
+    Ok(FolderInfo {
+        id: r.get(0)?,
+        path: r.get(1)?,
+        label: r.get(2)?,
+        // Anything but 'unavailable' was written as active.
+        status: if status == FolderStatus::Unavailable.as_str() {
+            FolderStatus::Unavailable
+        } else {
+            FolderStatus::Active
+        },
+        documents: r.get(4)?,
+        failed: r.get(5)?,
+    })
+}
+
 /// Settings key for the model that produced the stored vectors.
 const EMBEDDING_MODEL_KEY: &str = "embedding_model_id";
 
@@ -88,12 +145,44 @@ impl Db {
         })
     }
 
-    /// Enabled, active folders as `(id, canonical path)`.
-    pub fn active_folders(&self) -> Result<Vec<(i64, String)>, StorageError> {
+    /// Every folder, in the order it was added.
+    pub fn folders(&self) -> Result<Vec<FolderInfo>, StorageError> {
         self.read(|c| {
-            c.prepare("SELECT id, path FROM folders WHERE enabled = 1 AND status = 'active'")?
-                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            c.prepare(&format!("{FOLDER_SELECT} ORDER BY f.id"))?
+                .query_map([], folder_row)?
                 .collect()
+        })
+    }
+
+    pub fn folder(&self, id: i64) -> Result<Option<FolderInfo>, StorageError> {
+        self.read(|c| {
+            c.query_row(
+                &format!("{FOLDER_SELECT} WHERE f.id = ?1"),
+                [id],
+                folder_row,
+            )
+            .optional()
+        })
+    }
+
+    pub fn set_folder_status(&self, id: i64, status: FolderStatus) -> Result<(), StorageError> {
+        self.write(|c| {
+            c.execute(
+                "UPDATE folders SET status = ?2 WHERE id = ?1",
+                params![id, status.as_str()],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// One transaction: the folder's documents (their chunks, vectors, FTS rows, and
+    /// versions go by cascade and trigger), then the folder.
+    pub fn delete_folder(&self, id: i64) -> Result<(), StorageError> {
+        self.write(|c| {
+            let tx = c.transaction()?;
+            tx.execute("DELETE FROM documents WHERE folder_id = ?1", [id])?;
+            tx.execute("DELETE FROM folders WHERE id = ?1", [id])?;
+            tx.commit()
         })
     }
 

@@ -57,7 +57,7 @@ pub fn scan(
     folder_id: i64,
     root: &Path,
 ) -> Result<ScanPlan, PipelineError> {
-    let excludes = excludes(root, &db.setting(EXCLUDES_SETTING)?.unwrap_or_default())?;
+    let excludes = filter(db, root)?.excludes;
     let mut known: HashMap<String, Option<hash::FileStat>> = db
         .folder_documents(folder_id)?
         .into_iter()
@@ -90,12 +90,7 @@ pub fn scan(
         if !entry.file_type().is_some_and(|t| t.is_file()) {
             continue;
         }
-        let ext = entry
-            .path()
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(str::to_ascii_lowercase);
-        if !ext.is_some_and(|e| registry.supports(&e)) {
+        if !supported(registry, entry.path()) {
             continue;
         }
         let rel = entry
@@ -118,6 +113,51 @@ pub fn scan(
         plan.delete = known.into_keys().collect();
     }
     Ok(plan)
+}
+
+/// The rules `scan` applies to one path, for callers that see single paths (the watcher).
+pub struct Filter {
+    excludes: Gitignore,
+}
+
+/// Reads the user's exclude patterns for `root` (canonical).
+pub fn filter(db: &Db, root: &Path) -> Result<Filter, PipelineError> {
+    Ok(Filter {
+        excludes: excludes(root, &db.setting(EXCLUDES_SETTING)?.unwrap_or_default())?,
+    })
+}
+
+impl Filter {
+    /// Whether `scan` would list `path`, a regular file under `root`: no hidden component,
+    /// not excluded itself or through a parent directory, and a supported type.
+    pub fn admits_file(&self, registry: &ParserRegistry, root: &Path, path: &Path) -> bool {
+        self.visible(root, path, false) && supported(registry, path)
+    }
+
+    /// Whether `scan` would walk into `path`, a directory under `root`.
+    pub fn admits_dir(&self, root: &Path, path: &Path) -> bool {
+        self.visible(root, path, true)
+    }
+
+    fn visible(&self, root: &Path, path: &Path, is_dir: bool) -> bool {
+        let Ok(rel) = path.strip_prefix(root) else {
+            return false;
+        };
+        let hidden = rel
+            .components()
+            .any(|c| c.as_os_str().as_encoded_bytes().starts_with(b"."));
+        !hidden
+            && !self
+                .excludes
+                .matched_path_or_any_parents(path, is_dir)
+                .is_ignore()
+    }
+}
+
+fn supported(registry: &ParserRegistry, path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| registry.supports(&e.to_ascii_lowercase()))
 }
 
 /// Default excludes plus the user's lines. A user line that is not a valid glob is skipped,
@@ -145,6 +185,24 @@ mod tests {
     fn sorted(mut v: Vec<String>) -> Vec<String> {
         v.sort();
         v
+    }
+
+    /// Every regular file under `root`, relative, with nothing filtered.
+    fn walkdir_files(root: &Path) -> Vec<String> {
+        WalkBuilder::new(root)
+            .standard_filters(false)
+            .build()
+            .flatten()
+            .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+            .map(|e| {
+                e.path()
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
     }
 
     #[test]
@@ -202,8 +260,21 @@ mod tests {
         db.set_setting(EXCLUDES_SETTING, "drafts/\nsecret.*\n[invalid")
             .unwrap();
 
-        let plan = scan(&db, &ParserRegistry::new(), folder, &root).unwrap();
+        let reg = ParserRegistry::new();
+        let plan = scan(&db, &reg, folder, &root).unwrap();
         assert_eq!(sorted(plan.new), ["a.txt", "keep/k.md"]);
+        // The watcher's filter agrees with the walk on every file.
+        let filter = filter(&db, &root).unwrap();
+        let mut admitted: Vec<String> = walkdir_files(&root)
+            .into_iter()
+            .filter(|p| filter.admits_file(&reg, &root, &root.join(p)))
+            .collect();
+        admitted.sort();
+        assert_eq!(admitted, ["a.txt", "keep/k.md"]);
+        assert!(filter.admits_dir(&root, &root.join("keep")));
+        for d in ["drafts", "sub/target", "My.app", ".git"] {
+            assert!(!filter.admits_dir(&root, &root.join(d)), "{d}");
+        }
     }
 
     #[test]

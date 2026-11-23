@@ -69,7 +69,8 @@ fn load_model<R: Runtime>(
     });
 }
 
-/// Starts the index queue and rescans every active folder once. Runs on a blocking thread.
+/// Starts the index queue and the folder watcher, which rescans every present folder.
+/// Runs on a blocking thread.
 fn start_indexing<R: Runtime>(
     app: &AppHandle<R>,
     db: Arc<storage::db::Db>,
@@ -104,15 +105,13 @@ fn start_indexing<R: Runtime>(
             return;
         }
     };
-    match db.active_folders() {
-        Ok(folders) => {
-            for (id, path) in folders {
-                if let Err(e) = queue.rescan(id, std::path::Path::new(&path)) {
-                    tracing::warn!(folder_id = id, error = %e, "startup scan failed");
-                }
-            }
+    let queue = Arc::new(queue);
+    match ingest::watcher::FolderWatcher::start(db, queue.clone()) {
+        Ok(w) => {
+            app.manage(w);
         }
-        Err(e) => tracing::warn!(error = %e, "folders not read; startup scan skipped"),
+        // WatchError messages carry no paths.
+        Err(e) => tracing::warn!(error = %e, "folder watcher did not start"),
     }
     app.manage(queue);
 }
