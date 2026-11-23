@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /// Parse failures. Messages never carry paths or document content.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {

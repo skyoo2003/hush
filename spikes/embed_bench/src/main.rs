@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Throwaway spike for ADR-013: time 1,000 chunks per model and device, plus a tiny
 //! English retrieval check. Run from the repo root:
 //! `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml -- models`

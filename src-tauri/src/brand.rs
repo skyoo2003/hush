@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Single source of brand strings. Plain consts only: build.rs `include!`s this file. (So no `//!` doc here.)
 
 pub const APP_NAME: &str = "Locite";

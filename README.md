@@ -4,7 +4,12 @@
 
 Locite is a desktop app that indexes, searches, and summarizes the documents in folders you choose. Everything runs on your device. Every answer shows where it came from: the file, the page, the location, and the exact excerpt.
 
-> **Status: pre-alpha.** The storage, encryption, and network-guard foundations are in place. Document ingestion, search, and Q&A are not implemented yet, so the app does not do anything useful for end users today. Development currently targets macOS on Apple Silicon only.
+> **Status: pre-alpha.** Encrypted storage, the Air-Gap guard, document ingestion, the folder watcher, and hybrid search work in the backend. The search UI, model download, and Q&A are not built yet, so the app is not useful to end users today. Development targets macOS on Apple Silicon only. Expect breaking changes.
+
+<!-- Screenshots: add once the quick-search UI ships (roadmap week 5).
+![Quick search](docs/images/quick-search.png)
+![Answer with citations](docs/images/answer-citations.png)
+-->
 
 ## Why Locite
 
@@ -16,13 +21,18 @@ Most "chat with your documents" tools upload your files to someone else's server
 - **You pick the folders.** Locite only reads inside folders you register. It rejects `..` paths and symlinks that point outside them.
 - **Private logs.** Logs never contain document text, snippets, queries, file names, or keys.
 
-## How it stays offline
+## The Air-Gap principle
 
-The app makes outbound network requests for exactly two reasons: downloading a model you asked for, and checking for app updates. There is no telemetry. Each is allowed to reach one fixed host. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
+The app makes outbound network requests in exactly two cases:
+
+1. **Model download.** Fetching a model you asked for, from `huggingface.co`.
+2. **Update check.** Checking for a new app version on the project site.
+
+There is no telemetry. Each is allowed to reach one fixed host. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
 
 The code in this repository is all of the code in official builds. There are no private modules, so anyone can check the claim that nothing leaves the device.
 
-## Free, funded by sponsors
+## Sponsor
 
 Locite is free. Every feature works the same for everyone, with no feature locks, usage limits, or upgrade prompts. The app contains no payment or license code.
 
@@ -30,9 +40,11 @@ Maintenance is paid for by sponsors through [GitHub Sponsors](https://github.com
 
 ## Install
 
-Locite is distributed through GitHub Releases and Homebrew only. It is not in the Mac App Store, whose terms conflict with the GPL. Each release also carries the source archive of its tag. See [SUPPORT.md](SUPPORT.md) for supported macOS versions.
+There is no release yet. Build from source as shown below. Once releases start, Locite is distributed through GitHub Releases and Homebrew only. It is not in the Mac App Store, whose terms conflict with the GPL. Each release also carries the source archive of its tag. See [SUPPORT.md](SUPPORT.md) for supported macOS versions.
 
-## Planned features
+## Roadmap
+
+Work follows a 12-week plan to v1.0 in [docs/roadmap.md](docs/roadmap.md), and [CHANGELOG.md](CHANGELOG.md) records what has landed. Planned features:
 
 - Index PDFs and other documents from folders you choose, and keep the index up to date as files change.
 - Hybrid search that combines vector similarity, keyword search, and a reranker.
@@ -42,23 +54,35 @@ Locite is distributed through GitHub Releases and Homebrew only. It is not in th
 
 ## Building from source
 
-The full guide is [docs/building.md](docs/building.md). The short version:
+You need a Mac with Apple Silicon. The keychain integration is macOS-only for now.
 
-Requirements:
+1. Install the Xcode Command Line Tools, Rust stable, Node.js 26, and pnpm 10:
 
-- macOS (the keychain integration is macOS-only for now)
-- [Rust](https://rustup.rs/) stable
-- Node.js 26 and [pnpm](https://pnpm.io/)
+   ```sh
+   xcode-select --install
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   brew install node pnpm   # or any other way to get Node.js 26 and pnpm 10
+   ```
 
-```sh
-git clone https://github.com/skyoo2003/locite.git
-cd locite
-pnpm install
-bash scripts/fetch-pdfium.sh
-pnpm tauri dev
-```
+2. Clone, install, and fetch the pinned PDF engine (SHA-256 checked, git-ignored):
 
-On first launch the app creates an encrypted database under `~/Library/Application Support/` and stores its key in the Keychain. Unsigned dev builds may ask for Keychain access again after a rebuild.
+   ```sh
+   git clone https://github.com/skyoo2003/locite.git
+   cd locite
+   pnpm install
+   bash scripts/fetch-pdfium.sh
+   ```
+
+3. Run the tests. `pnpm build` comes first because the Rust crate embeds the built frontend.
+
+   ```sh
+   pnpm lint && pnpm typecheck && pnpm test && pnpm build
+   cd src-tauri && cargo test
+   ```
+
+4. Run the app with `pnpm tauri dev`, or build a bundle with `pnpm tauri build`.
+
+On first launch the app creates an encrypted database under `~/Library/Application Support/` and stores its key in the Keychain. Unsigned dev builds may ask for Keychain access again after a rebuild. [CONTRIBUTING.md](CONTRIBUTING.md) shows how to avoid that, and [docs/building.md](docs/building.md) covers release builds. Tests that need real model weights are `#[ignore]`d. Run `bash scripts/fetch-models.sh` and then `cargo test --release -- --ignored` to include them.
 
 ## Tech stack
 
@@ -75,6 +99,7 @@ On first launch the app creates an encrypted database under `~/Library/Applicati
 | `src-tauri/src/storage/` | Encrypted database, schema migrations, full-text index, keychain. |
 | `src-tauri/src/security/` | Air-Gap guard, scoped path validation, PII guard. |
 | `src-tauri/src/net.rs` | The only HTTP client in the app. |
+| `docs/architecture.md` | Module structure, data flow, and the network boundary. |
 | `src-tauri/src/commands.rs` | IPC entry points called by the frontend. |
 | `src/` | React frontend. |
 | `docs/decisions.md` | Architecture decision records, with benchmarks. |
@@ -88,6 +113,6 @@ Found a way for data to leave the device? Please report it privately as describe
 
 ## License
 
-Locite is licensed under [GPL-3.0-or-later](LICENSE). Forks are welcome under that license, but must use a different name and icon. See [TRADEMARK.md](TRADEMARK.md).
+Locite is licensed under [GPL-3.0-or-later](LICENSE). You may fork, modify, and redistribute it, even commercially, but anything you distribute must ship with its complete source under the same license. Forks distributed to others must also use a different name and icon, as described in [TRADEMARK.md](TRADEMARK.md).
 
 Model weights are separate data files, not part of the program, and each model's license is recorded in the model catalog. Only models whose license allows redistribution are included in the offline kit.

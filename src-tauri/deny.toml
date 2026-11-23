@@ -22,3 +22,17 @@ allow = [
   "Zlib",
 ]
 confidence-threshold = 0.9
+
+# Vulnerabilities fail CI. Each ignore names an unmaintained transitive crate with no maintained
+# replacement upstream; drop the entry once the parent crate moves off it.
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "chrono, via pdfium-render only" },
+  { id = "RUSTSEC-2024-0436", reason = "paste, a proc macro via candle, gemm, and tokenizers" },
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error, via the Linux-only gtk stack of tauri" },
+]
+
+[bans]
+# Duplicate versions come from tauri and candle; warn so they stay visible without failing CI.
+multiple-versions = "warn"
+wildcards = "deny"

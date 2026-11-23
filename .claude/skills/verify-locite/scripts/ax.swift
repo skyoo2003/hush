@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Usage: swift ax.swift <pid>
 // Dumps the accessibility tree of every window: "<depth-indent><role>[/<subrole>] desc=<..> value=<..>".
 // Web content (ARIA labels, input values, heading text) shows up here, so grep it for proof.

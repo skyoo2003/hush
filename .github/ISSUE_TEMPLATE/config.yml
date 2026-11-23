@@ -2,4 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
     url: https://github.com/skyoo2003/locite/security/advisories/new
-    about: Report privately. Do not open a public issue for vulnerabilities.
+    about: Report privately as described in SECURITY.md. Do not open a public issue for vulnerabilities.
+  - name: Security policy
+    url: https://github.com/skyoo2003/locite/blob/main/SECURITY.md
+    about: What counts as a vulnerability, and response times.

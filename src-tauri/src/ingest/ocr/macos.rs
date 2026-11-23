@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Apple Vision text recognition. The image goes from memory to a CGImage; nothing touches disk.
 
 use objc2::rc::autoreleasepool;

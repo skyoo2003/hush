@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Cargo runner (src-tauri/.cargo/config.toml) and launcher for dev builds: re-sign the binary with a stable
 # identity, then exec it. Ad-hoc signatures change on every rebuild, so the login keychain asks for the
 # DB key again each time. With LOCITE_DEV_SIGN_IDENTITY set (a codesigning identity name or SHA-1 from

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Fetches pinned embedding model files into models/{id}/ (git-ignored except manifest.json)
 # and checks each against the tracked manifest. Developer tooling only: the app never runs it.
 # Idempotent: files that already match are not downloaded again.

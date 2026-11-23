@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Air-Gap journey: flip the main-window switch, relaunch, check it persisted, then restore it the same way.
 # Usage: journey-air-gap.sh   (needs a live instance from launch.sh; relaunches twice with --no-build)
 # Evidence -> the starting run dir: air-gap.txt, air-gap-*.png, air-gap-*-ax.txt

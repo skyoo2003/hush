@@ -6,6 +6,10 @@ on:
     branches: [main]
   pull_request:
 
+# Never pull_request_target: PRs from forks run with a read-only token and no secrets.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: macos-15
@@ -26,6 +30,8 @@ jobs:
       # Pinned, SHA-256-checked PDFium. tauri-build copies it for the bundle, and the PDF tests load it.
       - run: bash scripts/fetch-pdfium.sh
       - run: bash scripts/check-brand.sh
+      - run: bash scripts/check-spdx.sh
+      - run: node scripts/check-npm-licenses.mjs
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -41,7 +47,7 @@ jobs:
       - name: Generated file drift check
         run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json src/ipc
 
-  licenses:
+  deny:
     # cargo-deny-action runs in Docker, which macOS runners lack. It reads metadata only, so Linux is fine.
     runs-on: ubuntu-latest
     steps:
@@ -49,4 +55,32 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: src-tauri/Cargo.toml
-          command: check licenses
+          command: check advisories bans licenses sources
+
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash scripts/check-dco.sh ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+
+  gitleaks:
+    # The CLI, not gitleaks-action, so no token or license key is needed.
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          f=gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "$GITLEAKS_SHA256  $f" | sha256sum -c -
+          tar xzf "$f" gitleaks
+      - name: Scan the full history
+        run: ./gitleaks git . --redact --config .gitleaks.toml

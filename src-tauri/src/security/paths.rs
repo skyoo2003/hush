@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Paths the app may read: inside a registered folder after every symlink is resolved.
 
 use std::path::{Path, PathBuf};

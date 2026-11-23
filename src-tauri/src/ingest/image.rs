@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! PNG/JPEG -> `ParsedDocument` through OCR. Decoding stays in memory.
 
 use std::io::Cursor;

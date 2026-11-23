@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! IPC entry points. Order inside each command: service call, then AppError mapping.
 //! Which window may call which command is decided by `capabilities/*.json` (Tauri ACL).
 

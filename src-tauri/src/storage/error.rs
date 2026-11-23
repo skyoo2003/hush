@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /// Messages never carry paths, keys, or document text.
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {

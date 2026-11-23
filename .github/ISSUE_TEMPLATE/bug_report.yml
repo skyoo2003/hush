@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Do not paste real document contents, queries, file names, paths, or keys. Use a minimal sample file instead.
-        For security issues, use private vulnerability reporting instead of this form.
+        For security issues, follow [SECURITY.md](https://github.com/skyoo2003/locite/blob/main/SECURITY.md) instead of this form.
   - type: textarea
     id: what-happened
     attributes:
@@ -27,10 +27,24 @@ body:
     validations:
       required: true
   - type: input
-    id: os
+    id: macos
     attributes:
-      label: OS and version
-      placeholder: macOS 26.1, Apple M4
+      label: macOS version
+      placeholder: macOS 26.1
+    validations:
+      required: true
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Chip
+      options:
+        - Apple M1
+        - Apple M2
+        - Apple M3
+        - Apple M4
+        - Apple M5
+        - Intel
+        - Other
     validations:
       required: true
   - type: textarea
@@ -44,5 +58,5 @@ body:
     attributes:
       label: Privacy
       options:
-        - label: This report contains no private document content, queries, file names, paths, or keys.
+        - label: I removed all document content. This report contains no private document text, queries, file names, paths, or keys.
           required: true

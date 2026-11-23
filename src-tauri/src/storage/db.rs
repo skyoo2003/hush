@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The single SQLCipher DB: one writer connection plus a small reader pool, WAL mode.
 //! All calls block; async callers run them in `spawn_blocking`.
 

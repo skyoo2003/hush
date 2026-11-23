@@ -1,6 +1,6 @@
 # Trademark policy
 
-The code is GPL-3.0-or-later, and you may fork, modify, and redistribute it under that license, including selling it, as long as you publish your source. The license covers the code. It does not cover the project's name and icon.
+The code is GPL-3.0-or-later, and you may fork, modify, and redistribute it under that license, including selling it, as long as you publish your source. The license covers the code. It does not cover the Locite name and icon. GPL-3.0 section 7(e) lets a licensor decline to grant rights under trademark law for use of some trade names, trademarks, or service marks, and this project does so for the Locite name and icon.
 
 ## Rules
 

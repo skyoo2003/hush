@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Query -> ranked, cited hits: vector KNN and keyword search fused with RRF, then rerank,
 //! per-document cap, and snippets. Calls block; run them in `spawn_blocking` or a worker.
 

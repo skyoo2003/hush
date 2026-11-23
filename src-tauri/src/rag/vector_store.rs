@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Chunk vectors (vec_chunks) and keyword search (chunks_fts) with one shared metadata filter.
 //! Calls block; run them in `spawn_blocking` or a worker.
 

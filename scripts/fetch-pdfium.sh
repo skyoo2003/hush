@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Fetches the pinned PDFium binary into src-tauri/vendor/pdfium/ (git-ignored).
 # Developer and build tooling only: the app itself never downloads anything.
 # Idempotent: skips the download when the marker matches the pinned hash.

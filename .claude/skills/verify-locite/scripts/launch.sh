@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Build the debug binary (frontend embedded, no Vite port) and launch it on the user's real data.
 # Usage: launch.sh [--no-build]   Prints the run dir on success.
 set -euo pipefail

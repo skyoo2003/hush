@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! The DB key and where it lives. On macOS it lives in the login keychain.
 
 use std::sync::Mutex;

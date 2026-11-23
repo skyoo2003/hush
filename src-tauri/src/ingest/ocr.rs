@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! OCR engines behind one trait: Apple Vision on macOS, a no-op elsewhere.
 //! Sync on purpose: callers run it in `spawn_blocking`.
 

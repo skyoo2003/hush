@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Retrieval eval: `cargo run --example eval [-- <corpus_dir> <queries.jsonl>]`.
 //! Defaults to `eval/corpus` and `eval/queries.jsonl`. Indexes the corpus into a throwaway
 //! encrypted DB with the default embedding model (run `scripts/fetch-models.sh` first), then

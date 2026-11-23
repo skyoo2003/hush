@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Brand consts live in src/brand.rs; this script mirrors them into src/brand.ts and tauri.conf.json.
 include!("src/brand.rs");
 

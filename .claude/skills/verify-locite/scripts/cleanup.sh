@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Stop the instance this run started (by recorded pid only). Evidence in .verify/<run>/ is kept.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"

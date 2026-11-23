@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Quick-search journey: global shortcut shows the popup, typing reaches the input, Escape clears and hides it,
 # and the shortcut hides a visible popup.
 # Usage: journey-quick-search.sh   Evidence -> .verify/current/quick-search.{txt,*.png}
