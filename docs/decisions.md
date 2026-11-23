@@ -482,3 +482,26 @@ Measured with `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml
 | `tokenizers` 0.23.2 (`default-features = false`, `fancy-regex`) | The model's tokenizer, for embedding and chunk token counts. No `http`/`hf-hub`, no `onig`, no progress bar. | Apache-2.0 | None |
 
 `cargo deny check licenses` passes without widening the allowlist.
+
+## ADR-014. Folder scanner and index queue
+
+- Date: 2026-11-23
+- Status: Accepted
+
+### Decision
+
+- `ingest::scanner::scan` walks a folder with `ignore::WalkBuilder`. It does not follow symlinks, skips hidden entries, stops at depth 32, and turns off the standard filters, so a `.gitignore` in a documents folder hides nothing. Excludes are gitignore lines: `scanner::DEFAULT_EXCLUDES` plus the `exclude_patterns` setting (one line per pattern; invalid lines are skipped). The walk is compared with the DB by stat into new, reindex, and delete lists. Deletes are listed only after a walk with no read errors.
+- `ingest::queue::IndexQueue` runs `cores / 2` parse threads (stat, hash, parse, chunk) and one thread that embeds and commits. They are joined by a `sync_channel` holding one parsed document per parse thread, so parsing blocks when embedding falls behind. Jobs are keyed by `(folder_id, rel_path)`. A job for a queued path merges into it, and a job for a running path runs after it.
+- `pipeline::commit` re-stats the file before its one-transaction write. A changed stat writes nothing and requeues; a vanished file deletes the document. This replaces the old shortcut where an edit between hashing and parsing could store content newer than the stored hash.
+- Cancel is a `tokio_util::sync::CancellationToken`, so the future async scheduler can own the same token. The embed thread checks it after embedding and before the commit.
+- `index://progress` carries counts only. A dedicated thread emits it at most every 250 ms, and only when something changed.
+- The managed `Db` is now `Arc<Db>`, so the queue's threads can share it with the IPC commands.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `ignore` 0.4 (pulls `globset`, `bstr`, `walkdir`, `same-file`) | Directory walk with gitignore-syntax excludes, depth limit, and no symlink following. | Unlicense OR MIT | None |
+| `tokio-util` 0.7 (`default-features = false`) | `CancellationToken`, usable from both threads and async code. Already in the tree through `reqwest`. | MIT | None |
+
+`cargo deny check licenses` passes without widening the allowlist.

@@ -6,3 +6,5 @@ pub mod ocr;
 pub mod parser;
 pub mod pdf;
 pub mod pipeline;
+pub mod queue;
+pub mod scanner;

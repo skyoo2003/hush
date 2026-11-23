@@ -1,6 +1,8 @@
 //! IPC entry points. Order inside each command: service call, then AppError mapping.
 //! Which window may call which command is decided by `capabilities/*.json` (Tauri ACL).
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
@@ -27,7 +29,7 @@ pub async fn search<R: Runtime>(
             .try_state::<SearchService>()
             .ok_or_else(AppError::model_missing)?;
         let db = app
-            .try_state::<Db>()
+            .try_state::<Arc<Db>>()
             .ok_or_else(|| AppError::internal("storage is not open"))?;
         service
             .search(
@@ -91,7 +93,7 @@ pub fn get_settings(net: State<'_, net::Client>) -> Settings {
 #[tauri::command]
 pub fn set_air_gap(
     enabled: bool,
-    db: State<'_, Db>,
+    db: State<'_, Arc<Db>>,
     net: State<'_, net::Client>,
 ) -> Result<(), AppError> {
     net.guard()

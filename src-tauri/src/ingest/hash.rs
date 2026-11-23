@@ -31,7 +31,10 @@ pub enum Decision {
 }
 
 pub fn stat(path: &ScopedPath) -> std::io::Result<FileStat> {
-    let md = std::fs::metadata(path.as_path())?;
+    stat_of(&std::fs::metadata(path.as_path())?)
+}
+
+pub fn stat_of(md: &std::fs::Metadata) -> std::io::Result<FileStat> {
     let ns = |d: std::time::Duration| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX);
     let mtime_ns = match md.modified()?.duration_since(UNIX_EPOCH) {
         Ok(d) => ns(d),
