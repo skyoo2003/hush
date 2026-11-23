@@ -58,7 +58,8 @@ jobs:
           command: check advisories bans licenses sources
 
   dco:
-    if: github.event_name == 'pull_request'
+    # Dependabot cannot sign off. Keyed on the authenticated PR author, not the commit email anyone can set.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
