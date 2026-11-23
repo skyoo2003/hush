@@ -15,6 +15,9 @@ pub struct AppError {
 pub enum ErrorCode {
     NotImplemented,
     Internal,
+    /// The embedding model is not installed or failed its checks, so search is off.
+    ModelMissing,
+    SearchFailed,
 }
 
 impl AppError {
@@ -22,6 +25,13 @@ impl AppError {
         Self {
             code: ErrorCode::Internal,
             message: message.into(),
+        }
+    }
+
+    pub fn model_missing() -> Self {
+        Self {
+            code: ErrorCode::ModelMissing,
+            message: "embedding model is not available".into(),
         }
     }
 

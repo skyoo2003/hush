@@ -38,9 +38,28 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db)?);
         app.manage(net::Client::new(guard)?);
         app.manage(db);
+        load_search(app.handle(), app.path().app_data_dir()?.join("models"));
         register_quick_search_shortcut(app.handle())?;
         Ok(())
     })
+}
+
+/// Loads the embedding model off the main thread. Until it is managed, or if it fails,
+/// `search` returns `model_missing`.
+fn load_search<R: Runtime>(app: &AppHandle<R>, models_dir: std::path::PathBuf) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match rag::embedder::BertEmbedder::load(&models_dir, rag::embedder::MODELS[0].id) {
+            Ok(e) => {
+                app.manage(rag::hybrid::SearchService::new(
+                    Arc::new(e),
+                    Box::new(rag::hybrid::NoopReranker),
+                ));
+            }
+            // RagError messages carry no paths.
+            Err(e) => tracing::warn!(error = %e, "embedding model not loaded; search is off"),
+        }
+    });
 }
 
 fn register_quick_search_shortcut<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
@@ -174,12 +193,52 @@ mod tests {
         let quick = window(&app, "quick-search");
 
         assert_acl_denied(invoke(&quick, "get_settings"));
-        assert_not_implemented(invoke(&quick, "search"));
+        let query = || tauri::ipc::InvokeBody::Json(serde_json::json!({ "query": "x" }));
+        let err = invoke_with(&quick, "search", query()).expect_err("no search service");
+        assert_eq!(err["code"], "model_missing", "got {err}");
         assert!(invoke(&quick, "hide_window").is_ok());
 
         assert_not_implemented(invoke(&main, "list_folders"));
-        assert_acl_denied(invoke(&main, "search"));
+        assert_acl_denied(invoke_with(&main, "search", query()));
         assert_acl_denied(invoke(&quick, "set_air_gap"));
+    }
+
+    #[test]
+    fn quick_search_searches_an_indexed_folder() {
+        let app = builder(mock_builder())
+            .build(tauri::generate_context!(test = true))
+            .unwrap();
+        let (_db_dir, db) = storage::db::tests::temp_db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Notes");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub/plan.txt"), "The launch date moved to March.").unwrap();
+        let report = ingest::pipeline::index_folder_once(
+            &db,
+            &ingest::parser::ParserRegistry::new(),
+            &root,
+            &ingest::chunker::ChunkerConfig::default(),
+            &ingest::chunker::CharApprox,
+            &rag::embedder::FakeEmbedder,
+        )
+        .unwrap();
+        assert_eq!(report.new, 1);
+        app.manage(db);
+        app.manage(rag::hybrid::SearchService::new(
+            Arc::new(rag::embedder::FakeEmbedder),
+            Box::new(rag::hybrid::NoopReranker),
+        ));
+        let quick = window(&app, "quick-search");
+        let body = tauri::ipc::InvokeBody::Json(serde_json::json!({ "query": "launch date" }));
+        let res = invoke_with(&quick, "search", body)
+            .unwrap()
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        let hit = &res["hits"][0];
+        assert_eq!(hit["relPath"], "sub/plan.txt");
+        assert_eq!(hit["fileName"], "plan.txt");
+        assert_eq!(hit["matchKind"], "both");
+        assert!(res["topScore"].as_f64().unwrap() > 0.0);
     }
 
     #[test]

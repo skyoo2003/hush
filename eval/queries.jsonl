@@ -1,0 +1,30 @@
+{"id": "q01", "query": "Free Software Foundation copyright notice", "kind": "proper_noun", "relevant": [{"file": "gpl-3.0.txt", "anchor": "Copyright (C) 2007 Free Software Foundation"}]}
+{"id": "q02", "query": "What is Code.gov?", "kind": "proper_noun", "relevant": [{"file": "federal-source-code-policy.md", "anchor": "an online collection of tools, best practices, and schemas"}]}
+{"id": "q03", "query": "OFAC export restrictions", "kind": "proper_noun", "relevant": [{"file": "commonpaper-cloud-service-agreement.md", "anchor": "United States Department of Commerce, OFAC"}]}
+{"id": "q04", "query": "Boost Software License", "kind": "proper_noun", "relevant": [{"file": "bsl-1.0.txt", "anchor": "Boost Software License - Version 1.0"}]}
+{"id": "q05", "query": "College Scorecard open source website", "kind": "proper_noun", "relevant": [{"file": "federal-source-code-policy.md", "anchor": "College Scorecard"}]}
+{"id": "q06", "query": "Section 8.1 Liability Cap", "kind": "clause", "relevant": [{"file": "commonpaper-cloud-service-agreement.md", "anchor": "will not be more than the General Cap Amount"}]}
+{"id": "q07", "query": "MPL 5.2 patent litigation termination", "kind": "clause", "relevant": [{"file": "mpl-2.0.txt", "anchor": "If You initiate litigation against any entity by asserting a patent"}]}
+{"id": "q08", "query": "GPL section 8 termination reinstatement of license", "kind": "clause", "relevant": [{"file": "gpl-3.0.txt", "anchor": "prior to 60 days after the cessation"}]}
+{"id": "q09", "query": "Apache License section 4 Redistribution", "kind": "clause", "relevant": [{"file": "apache-2.0.txt", "anchor": "You may reproduce and distribute copies of the Work"}]}
+{"id": "q10", "query": "MNDA section 3 exceptions to confidentiality", "kind": "clause", "relevant": [{"file": "commonpaper-mutual-nda.md", "anchor": "publicly available through no fault of the Receiving Party"}]}
+{"id": "q11", "query": "72 hours security incident notification", "kind": "numeric", "relevant": [{"file": "commonpaper-dpa.md", "anchor": "no later than 72 hours"}]}
+{"id": "q12", "query": "release 20 percent of custom-developed code", "kind": "numeric", "relevant": [{"file": "federal-source-code-policy.md", "anchor": "at least 20 percent of its new custom-developed code"}, {"file": "federal-source-code-policy.md", "anchor": "at least 20 percent of new custom-developed code"}]}
+{"id": "q13", "query": "service credits capped at 8% of fees", "kind": "numeric", "relevant": [{"file": "commonpaper-sla.md", "anchor": "more than 8% of Cloud Service Fees"}]}
+{"id": "q14", "query": "request a service credit within 7 days", "kind": "numeric", "relevant": [{"file": "commonpaper-sla.md", "anchor": "within 7 days of the end of the month"}]}
+{"id": "q15", "query": "suspension for balance unpaid more than 30 days", "kind": "numeric", "relevant": [{"file": "commonpaper-cloud-service-agreement.md", "anchor": "undisputed balance on its account for more than 30 days"}]}
+{"id": "q16", "query": "120 days to develop metrics for the pilot program", "kind": "numeric", "relevant": [{"file": "federal-source-code-policy.md", "anchor": "OMB shall develop metrics"}]}
+{"id": "q17", "query": "10 business days notice of subprocessor changes", "kind": "numeric", "relevant": [{"file": "commonpaper-dpa.md", "anchor": "10 business days"}]}
+{"id": "q18", "query": "Can I use MIT licensed code in a commercial product?", "kind": "concept", "relevant": [{"file": "mit.txt", "anchor": "to deal in the Software without restriction"}]}
+{"id": "q19", "query": "what happens to confidential documents when the NDA ends", "kind": "concept", "relevant": [{"file": "commonpaper-mutual-nda.md", "anchor": "destroy all Confidential Information"}]}
+{"id": "q20", "query": "how is uptime calculated", "kind": "concept", "relevant": [{"file": "commonpaper-sla.md", "anchor": "Available Minutes minus the number of Downtime Minutes"}]}
+{"id": "q21", "query": "can the vendor use our company logo in marketing", "kind": "concept", "relevant": [{"file": "commonpaper-cloud-service-agreement.md", "anchor": "name and logo in marketing"}]}
+{"id": "q22", "query": "software dedicated to the public domain", "kind": "concept", "relevant": [{"file": "unlicense.txt", "anchor": "free and unencumbered software released into the public domain"}]}
+{"id": "q23", "query": "reasons an agency may withhold source code from release", "kind": "concept", "relevant": [{"file": "federal-source-code-policy.md", "anchor": "identifiable risk to the detriment of national security"}]}
+{"id": "q24", "query": "combining GPL code with Affero licensed code", "kind": "concept", "relevant": [{"file": "gpl-3.0.txt", "anchor": "Use with the GNU Affero General Public License"}]}
+{"id": "q25", "query": "conditions for redistributing in binary form", "kind": "concept", "relevant": [{"file": "bsd-2-clause.txt", "anchor": "Redistributions in binary form must reproduce the above"}]}
+{"id": "q26", "query": "monthly subscription price in euros", "kind": "no_answer", "relevant": []}
+{"id": "q27", "query": "Kubernetes cluster autoscaling configuration", "kind": "no_answer", "relevant": []}
+{"id": "q28", "query": "employee parental leave policy weeks", "kind": "no_answer", "relevant": []}
+{"id": "q29", "query": "WTFPL license terms", "kind": "no_answer", "relevant": []}
+{"id": "q30", "query": "GDPR Article 17 right to erasure deadline", "kind": "no_answer", "relevant": []}
