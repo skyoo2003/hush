@@ -59,7 +59,39 @@ pub(crate) fn insert_chunks(
     Ok(())
 }
 
+/// Settings key for the model that produced the stored vectors.
+const EMBEDDING_MODEL_KEY: &str = "embedding_model_id";
+
 impl Db {
+    /// Every document row in `folder_id` with its relative path.
+    pub fn folder_documents(&self, folder_id: i64) -> Result<Vec<(DocId, String)>, StorageError> {
+        self.read(|c| {
+            c.prepare("SELECT id, rel_path FROM documents WHERE folder_id = ?1")?
+                .query_map([folder_id], |r| Ok((DocId(r.get(0)?), r.get(1)?)))?
+                .collect()
+        })
+    }
+
+    /// Records `model_id` as the model behind the stored vectors. When it differs from the
+    /// stored one, every document's sha256 is cleared in the same transaction, so the next
+    /// scan reindexes it with the new model. Returns whether the model changed.
+    pub fn sync_embedding_model(&self, model_id: &str) -> Result<bool, StorageError> {
+        if self.setting(EMBEDDING_MODEL_KEY)?.as_deref() == Some(model_id) {
+            return Ok(false);
+        }
+        self.write(|c| {
+            let tx = c.transaction()?;
+            tx.execute("UPDATE documents SET sha256 = NULL", [])?;
+            tx.execute(
+                "INSERT INTO settings(key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [EMBEDDING_MODEL_KEY, model_id],
+            )?;
+            tx.commit()
+        })?;
+        Ok(true)
+    }
+
     /// The document's id and its last indexed state; the state is `None` until the first index.
     pub fn document_state(
         &self,
