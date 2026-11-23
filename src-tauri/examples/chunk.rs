@@ -1,14 +1,16 @@
 //! Prints a file's chunks as JSON: `cargo run --example chunk -- <file>`.
+//! Counts tokens with the default embedding model; run `scripts/fetch-models.sh` first.
 
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 
-use locite_lib::ingest::chunker::{chunk, CharApprox, ChunkerConfig, TokenCounter};
+use locite_lib::ingest::chunker::{chunk, ChunkerConfig, TokenCounter};
 use locite_lib::ingest::image::{ImageParser, JPEG_MAGIC, PNG_MAGIC};
 use locite_lib::ingest::ocr::{self, OcrEngine};
 use locite_lib::ingest::parser::ParserRegistry;
 use locite_lib::ingest::pdf::{PdfParser, PDF_MAGIC};
+use locite_lib::rag::embedder::{BertEmbedder, MODELS};
 use locite_lib::security::paths::ScopedPath;
 use locite_lib::storage::db::DocId;
 
@@ -16,6 +18,7 @@ const PDFIUM: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/vendor/pdfium/lib/libpdfium.dylib"
 );
+const MODELS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../models");
 
 fn main() {
     if let Err(e) = run() {
@@ -40,7 +43,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     let doc = registry.parse(&path)?;
-    let chunks = chunk(DocId(0), &doc, &ChunkerConfig::default(), &CharApprox);
+    let counter = BertEmbedder::load(Path::new(MODELS_DIR), MODELS[0].id)?;
+    let chunks = chunk(DocId(0), &doc, &ChunkerConfig::default(), &counter);
     let out: Vec<_> = chunks
         .iter()
         .map(|c| {
@@ -51,7 +55,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 "section_path": c.section_path,
                 "start_offset": c.start_offset,
                 "end_offset": c.end_offset,
-                "tokens": CharApprox.count(&c.text),
+                "tokens": counter.count(&c.text),
                 "bbox": c.bbox,
                 "sha256": sha,
                 "text": c.text,
