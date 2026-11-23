@@ -2,6 +2,7 @@
 //! Sync on purpose: callers run it in `spawn_blocking`. This is the one ingest file that
 //! calls storage.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use super::chunker::{self, ChunkerConfig, TokenCounter};
@@ -103,11 +104,16 @@ pub struct IndexReport {
     pub skipped: usize,
     /// Files whose `process_file` failed, plus entries that could not be read.
     pub failed: usize,
+    /// Documents deleted because their file is gone, hidden, or no longer supported.
+    pub removed: usize,
 }
 
 /// Registers `root` and indexes every supported file under it once. Hidden entries are
 /// skipped and symlinks are not followed. Per-file errors are counted, not returned.
-// shortcut: no watcher and no removal of vanished files; add both with the folder watcher.
+/// Documents whose file was not seen are deleted, but only after a walk with no read errors,
+/// so an unreadable subfolder never wipes its documents. A changed embedding model
+/// reindexes every document.
+// shortcut: no watcher; add it with the folder watcher (week 4).
 pub fn index_folder_once(
     db: &Db,
     registry: &ParserRegistry,
@@ -120,13 +126,17 @@ pub fn index_folder_once(
     let not_utf8 = || PipelineError::Io(std::io::ErrorKind::InvalidData.into());
     let path = root.to_str().ok_or_else(not_utf8)?;
     let label = root.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+    db.sync_embedding_model(embedder.model_id())?;
     let mut report = IndexReport {
         folder_id: db.upsert_folder(path, label)?,
         new: 0,
         reindexed: 0,
         skipped: 0,
         failed: 0,
+        removed: 0,
     };
+    let mut seen = HashSet::new();
+    let mut walk_complete = true;
     let mut dirs = vec![root.clone()];
     while let Some(dir) = dirs.pop() {
         let entries = match std::fs::read_dir(&dir) {
@@ -134,12 +144,14 @@ pub fn index_folder_once(
             Err(e) if dir == root => return Err(PipelineError::Io(e)),
             Err(_) => {
                 report.failed += 1;
+                walk_complete = false;
                 continue;
             }
         };
         for entry in entries {
             let Ok((entry, kind)) = entry.and_then(|e| e.file_type().map(|t| (e, t))) else {
                 report.failed += 1;
+                walk_complete = false;
                 continue;
             };
             if entry.file_name().as_encoded_bytes().starts_with(b".") {
@@ -160,8 +172,10 @@ pub fn index_folder_once(
             }
             let Some(rel) = path.strip_prefix(&root).ok().and_then(|r| r.to_str()) else {
                 report.failed += 1;
+                walk_complete = false;
                 continue;
             };
+            seen.insert(rel.to_owned());
             match process_file(
                 db,
                 registry,
@@ -178,6 +192,14 @@ pub fn index_folder_once(
                     Change::Skip => report.skipped += 1,
                 },
                 Err(_) => report.failed += 1,
+            }
+        }
+    }
+    if walk_complete {
+        for (doc, rel) in db.folder_documents(report.folder_id)? {
+            if !seen.contains(&rel) {
+                db.delete_document(doc)?;
+                report.removed += 1;
             }
         }
     }
@@ -432,6 +454,75 @@ mod tests {
             count(&db, "SELECT count(*) FROM chunks"),
             count(&db, "SELECT count(*) FROM vec_chunks")
         );
+    }
+
+    fn rel_paths(db: &Db) -> Vec<String> {
+        db.read(|c| {
+            c.prepare("SELECT rel_path FROM documents ORDER BY rel_path")?
+                .query_map([], |r| r.get(0))?
+                .collect()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn index_folder_once_removes_vanished_files_after_a_complete_walk() {
+        let (_db_dir, db) = temp_db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Notes");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("a.txt"), BODY).unwrap();
+        std::fs::write(root.join("b.txt"), BODY).unwrap();
+        std::fs::write(root.join("sub/c.txt"), BODY).unwrap();
+        let reg = ParserRegistry::new();
+        let cfg = ChunkerConfig::default();
+        let run = || index_folder_once(&db, &reg, &root, &cfg, &CharApprox, &FakeEmbedder).unwrap();
+        assert_eq!(run().new, 3);
+
+        std::fs::remove_file(root.join("a.txt")).unwrap();
+        std::fs::rename(root.join("b.txt"), root.join(".b.txt")).unwrap();
+        let report = run();
+        assert_eq!((report.skipped, report.removed), (1, 2));
+        assert_eq!(rel_paths(&db), ["sub/c.txt"]);
+        assert_eq!(
+            count(&db, "SELECT count(*) FROM chunks"),
+            count(&db, "SELECT count(*) FROM vec_chunks")
+        );
+
+        // An unreadable subfolder is a walk error, so its documents stay.
+        let sub = root.join("sub");
+        let mode = |m| {
+            std::fs::set_permissions(&sub, std::os::unix::fs::PermissionsExt::from_mode(m)).unwrap()
+        };
+        mode(0o000);
+        let report = run();
+        mode(0o755);
+        assert_eq!((report.failed, report.removed), (1, 0));
+        assert_eq!(rel_paths(&db), ["sub/c.txt"]);
+    }
+
+    #[test]
+    fn a_changed_embedding_model_reindexes_every_document() {
+        let (_db_dir, db) = temp_db();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), BODY).unwrap();
+        let reg = ParserRegistry::new();
+        let cfg = ChunkerConfig::default();
+        let run =
+            || index_folder_once(&db, &reg, dir.path(), &cfg, &CharApprox, &FakeEmbedder).unwrap();
+        assert_eq!(run().new, 1);
+        assert_eq!(run().skipped, 1);
+
+        assert!(db.sync_embedding_model("other-model").unwrap());
+        assert!(!db.sync_embedding_model("other-model").unwrap());
+        let report = run();
+        assert_eq!((report.new, report.skipped), (1, 0));
+        assert_eq!(
+            db.setting("embedding_model_id").unwrap().as_deref(),
+            Some("fake")
+        );
+        assert_eq!(count(&db, "SELECT count(*) FROM doc_versions"), 2);
+        assert_eq!(run().skipped, 1);
     }
 
     #[test]
