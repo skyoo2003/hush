@@ -54,5 +54,5 @@ Maintainers tag releases from `main` after CI passes. Every release ships its fu
 ## Contact
 
 - Security issues: GitHub private vulnerability reporting, described in [SECURITY.md](SECURITY.md).
-- Conduct issues: TODO, add a private contact address before the first public release. Until then, contact the lead maintainer through their GitHub profile.
+- Conduct issues: email the lead maintainer at skyoo2003@gmail.com. Reports are kept confidential.
 - Everything else: GitHub issues.
