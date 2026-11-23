@@ -63,11 +63,36 @@ pub(crate) fn insert_chunks(
 const EMBEDDING_MODEL_KEY: &str = "embedding_model_id";
 
 impl Db {
-    /// Every document row in `folder_id` with its relative path.
-    pub fn folder_documents(&self, folder_id: i64) -> Result<Vec<(DocId, String)>, StorageError> {
+    /// Every document row in `folder_id` with its relative path and its last indexed stat.
+    /// The stat is `None` until the document has been indexed once.
+    pub fn folder_documents(
+        &self,
+        folder_id: i64,
+    ) -> Result<Vec<(DocId, String, Option<FileStat>)>, StorageError> {
         self.read(|c| {
-            c.prepare("SELECT id, rel_path FROM documents WHERE folder_id = ?1")?
-                .query_map([folder_id], |r| Ok((DocId(r.get(0)?), r.get(1)?)))?
+            c.prepare(
+                "SELECT id, rel_path, size, mtime, sha256 IS NOT NULL FROM documents WHERE folder_id = ?1",
+            )?
+            .query_map([folder_id], |r| {
+                let stat = match (r.get::<_, Option<i64>>(2)?, r.get::<_, Option<i64>>(3)?, r.get(4)?) {
+                    (Some(size), Some(mtime_ns), true) => Some(FileStat {
+                        // A negative size never matches a real stat, so the file is rehashed.
+                        size: u64::try_from(size).unwrap_or(u64::MAX),
+                        mtime_ns,
+                    }),
+                    _ => None,
+                };
+                Ok((DocId(r.get(0)?), r.get(1)?, stat))
+            })?
+            .collect()
+        })
+    }
+
+    /// Enabled, active folders as `(id, canonical path)`.
+    pub fn active_folders(&self) -> Result<Vec<(i64, String)>, StorageError> {
+        self.read(|c| {
+            c.prepare("SELECT id, path FROM folders WHERE enabled = 1 AND status = 'active'")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect()
         })
     }

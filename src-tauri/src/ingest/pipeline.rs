@@ -1,14 +1,15 @@
 //! One file -> stored chunks: scope, stat, hash, parse, chunk, embed, write.
-//! Sync on purpose: callers run it in `spawn_blocking`. This is the one ingest file that
-//! calls storage.
+//! Sync on purpose: callers run it in `spawn_blocking` or a worker thread. This is the one
+//! ingest file that calls storage. `prepare`, `embed`, and `commit` are the stages the
+//! queue runs on separate workers; `process_file` runs them in a row.
 
-use std::collections::HashSet;
 use std::path::Path;
 
-use super::chunker::{self, ChunkerConfig, TokenCounter};
+use super::chunker::{self, Chunk, ChunkerConfig, TokenCounter};
 use super::error::PipelineError;
-use super::hash::{self, Decision};
+use super::hash::{self, Decision, FileState};
 use super::parser::ParserRegistry;
+use super::scanner;
 use crate::rag::embedder::Embedder;
 use crate::security::paths::ScopedPath;
 use crate::storage::db::{Db, DocId};
@@ -28,10 +29,33 @@ pub struct Outcome {
     pub chunks: usize,
 }
 
-/// Idempotent: a crash after the pending row leaves its sha256 NULL, so the next run treats
-/// the file as new.
-#[allow(clippy::too_many_arguments)]
-pub fn process_file(
+/// A parsed and chunked file, waiting for its embeddings and commit.
+pub struct Parsed {
+    path: ScopedPath,
+    doc_id: DocId,
+    state: FileState,
+    change: Change,
+    chunks: Vec<Chunk>,
+    needs_ocr: bool,
+}
+
+pub enum Prepared {
+    Skip(Outcome),
+    Ready(Parsed),
+}
+
+pub enum Commit {
+    Done(Outcome),
+    /// The file's stat changed after it was hashed; nothing was written.
+    Changed,
+    /// The file is gone; its document row was deleted.
+    Gone(DocId),
+}
+
+/// Stat, hash, parse, and chunk. Creates a pending row for a new file. Idempotent: a crash
+/// or cancel after the pending row leaves its sha256 NULL, so the next run treats the file
+/// as new.
+pub fn prepare(
     db: &Db,
     registry: &ParserRegistry,
     folder_id: i64,
@@ -39,8 +63,7 @@ pub fn process_file(
     rel_path: &str,
     cfg: &ChunkerConfig,
     counter: &dyn TokenCounter,
-    embedder: &dyn Embedder,
-) -> Result<Outcome, PipelineError> {
+) -> Result<Prepared, PipelineError> {
     let path = ScopedPath::new(root, Path::new(rel_path))?;
     let stat = hash::stat(&path).map_err(PipelineError::Io)?;
     let (doc_id, prev) = match db.document_state(folder_id, rel_path)? {
@@ -54,19 +77,23 @@ pub fn process_file(
             (db.insert_pending_document(folder_id, rel_path, &ext)?, None)
         }
     };
-    // shortcut: the file is read twice (hash, then parse), so an edit in between indexes content newer than the stored hash; hash the parser's bytes if that matters.
-    let decision = hash::decide(prev.as_ref(), stat, || hash::sha256_file(&path))
-        .map_err(PipelineError::Io)?;
+    let decision = match hash::decide(prev.as_ref(), stat, || hash::sha256_file(&path)) {
+        Ok(d) => d,
+        Err(e) => {
+            db.mark_error(doc_id, "read_failed")?;
+            return Err(PipelineError::Io(e));
+        }
+    };
     let (state, change) = match decision {
         Decision::Skip => {
             if prev.is_some_and(|p| p.stat != stat) {
                 db.update_stat(doc_id, stat)?;
             }
-            return Ok(Outcome {
+            return Ok(Prepared::Skip(Outcome {
                 doc_id,
                 change: Change::Skip,
                 chunks: 0,
-            });
+            }));
         }
         Decision::Reindex(s) => (s, Change::Reindex),
         Decision::New(s) => (s, Change::New),
@@ -78,22 +105,86 @@ pub fn process_file(
             return Err(e.into());
         }
     };
-    let chunks = chunker::chunk(doc_id, &doc, cfg, counter);
-    let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
-    let embeddings = match embedder.embed_passages(&texts) {
-        Ok(e) => e,
-        Err(e) => {
-            db.mark_error(doc_id, "embed_failed")?;
-            return Err(PipelineError::Embed(e));
-        }
-    };
-    let needs_ocr = doc.pages.iter().any(|p| p.needs_ocr);
-    db.replace_chunks(doc_id, &state, needs_ocr, &chunks, &embeddings)?;
-    Ok(Outcome {
+    Ok(Prepared::Ready(Parsed {
+        chunks: chunker::chunk(doc_id, &doc, cfg, counter),
+        needs_ocr: doc.pages.iter().any(|p| p.needs_ocr),
+        path,
         doc_id,
+        state,
         change,
-        chunks: chunks.len(),
+    }))
+}
+
+pub fn embed(
+    db: &Db,
+    parsed: &Parsed,
+    embedder: &dyn Embedder,
+) -> Result<Vec<Vec<f32>>, PipelineError> {
+    let texts: Vec<&str> = parsed.chunks.iter().map(|c| c.text.as_str()).collect();
+    embedder.embed_passages(&texts).map_err(|e| {
+        match db.mark_error(parsed.doc_id, "embed_failed") {
+            Ok(()) => PipelineError::Embed(e),
+            Err(s) => s.into(),
+        }
     })
+}
+
+/// Re-stats the file, then writes the chunks in one transaction only if the stat still
+/// matches the one that was hashed. The parser read the file after hashing, so a changed
+/// stat means the chunks may not match the stored hash.
+pub fn commit(db: &Db, parsed: Parsed, embeddings: &[Vec<f32>]) -> Result<Commit, PipelineError> {
+    match hash::stat(&parsed.path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            db.delete_document(parsed.doc_id)?;
+            return Ok(Commit::Gone(parsed.doc_id));
+        }
+        Err(e) => return Err(PipelineError::Io(e)),
+        Ok(s) if s != parsed.state.stat => return Ok(Commit::Changed),
+        Ok(_) => {}
+    }
+    db.replace_chunks(
+        parsed.doc_id,
+        &parsed.state,
+        parsed.needs_ocr,
+        &parsed.chunks,
+        embeddings,
+    )?;
+    Ok(Commit::Done(Outcome {
+        doc_id: parsed.doc_id,
+        change: parsed.change,
+        chunks: parsed.chunks.len(),
+    }))
+}
+
+/// How many times `process_file` restarts a file that changed while it was indexed.
+const MAX_RESTARTS: usize = 3;
+
+/// `prepare`, `embed`, and `commit` in a row. A file that changes during indexing is
+/// restarted; a file that vanishes returns `Io(NotFound)` after its row is deleted.
+#[allow(clippy::too_many_arguments)]
+pub fn process_file(
+    db: &Db,
+    registry: &ParserRegistry,
+    folder_id: i64,
+    root: &Path,
+    rel_path: &str,
+    cfg: &ChunkerConfig,
+    counter: &dyn TokenCounter,
+    embedder: &dyn Embedder,
+) -> Result<Outcome, PipelineError> {
+    for _ in 0..MAX_RESTARTS {
+        let parsed = match prepare(db, registry, folder_id, root, rel_path, cfg, counter)? {
+            Prepared::Skip(o) => return Ok(o),
+            Prepared::Ready(p) => p,
+        };
+        let embeddings = embed(db, &parsed, embedder)?;
+        match commit(db, parsed, &embeddings)? {
+            Commit::Done(o) => return Ok(o),
+            Commit::Changed => continue,
+            Commit::Gone(_) => return Err(PipelineError::Io(std::io::ErrorKind::NotFound.into())),
+        }
+    }
+    Err(PipelineError::Unstable)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,16 +195,23 @@ pub struct IndexReport {
     pub skipped: usize,
     /// Files whose `process_file` failed, plus entries that could not be read.
     pub failed: usize,
-    /// Documents deleted because their file is gone, hidden, or no longer supported.
+    /// Documents deleted because their file is gone, hidden, excluded, or no longer supported.
     pub removed: usize,
 }
 
-/// Registers `root` and indexes every supported file under it once. Hidden entries are
-/// skipped and symlinks are not followed. Per-file errors are counted, not returned.
-/// Documents whose file was not seen are deleted, but only after a walk with no read errors,
-/// so an unreadable subfolder never wipes its documents. A changed embedding model
-/// reindexes every document.
-// shortcut: no watcher; add it with the folder watcher (week 4).
+/// Registers `root`, canonicalized. Returns the folder id and the canonical root.
+pub fn register_folder(db: &Db, root: &Path) -> Result<(i64, std::path::PathBuf), PipelineError> {
+    let root = root.canonicalize().map_err(PipelineError::Io)?;
+    let path = root
+        .to_str()
+        .ok_or_else(|| PipelineError::Io(std::io::ErrorKind::InvalidData.into()))?;
+    let label = root.file_name().and_then(|n| n.to_str()).unwrap_or(path);
+    Ok((db.upsert_folder(path, label)?, root))
+}
+
+/// Registers `root` and indexes it once, in this thread, from a `scanner::scan` plan.
+/// Per-file errors are counted, not returned. A changed embedding model reindexes every
+/// document. The app uses `queue::IndexQueue`; this is for tools and tests.
 pub fn index_folder_once(
     db: &Db,
     registry: &ParserRegistry,
@@ -122,85 +220,31 @@ pub fn index_folder_once(
     counter: &dyn TokenCounter,
     embedder: &dyn Embedder,
 ) -> Result<IndexReport, PipelineError> {
-    let root = root.canonicalize().map_err(PipelineError::Io)?;
-    let not_utf8 = || PipelineError::Io(std::io::ErrorKind::InvalidData.into());
-    let path = root.to_str().ok_or_else(not_utf8)?;
-    let label = root.file_name().and_then(|n| n.to_str()).unwrap_or(path);
     db.sync_embedding_model(embedder.model_id())?;
+    let (folder_id, root) = register_folder(db, root)?;
+    let plan = scanner::scan(db, registry, folder_id, &root)?;
     let mut report = IndexReport {
-        folder_id: db.upsert_folder(path, label)?,
+        folder_id,
         new: 0,
         reindexed: 0,
-        skipped: 0,
-        failed: 0,
+        skipped: plan.unchanged,
+        failed: plan.failed,
         removed: 0,
     };
-    let mut seen = HashSet::new();
-    let mut walk_complete = true;
-    let mut dirs = vec![root.clone()];
-    while let Some(dir) = dirs.pop() {
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(e) => e,
-            Err(e) if dir == root => return Err(PipelineError::Io(e)),
-            Err(_) => {
-                report.failed += 1;
-                walk_complete = false;
-                continue;
-            }
-        };
-        for entry in entries {
-            let Ok((entry, kind)) = entry.and_then(|e| e.file_type().map(|t| (e, t))) else {
-                report.failed += 1;
-                walk_complete = false;
-                continue;
-            };
-            if entry.file_name().as_encoded_bytes().starts_with(b".") {
-                continue;
-            }
-            let path = entry.path();
-            // `file_type` does not follow symlinks, so a link is neither a dir nor a file here.
-            if kind.is_dir() {
-                dirs.push(path);
-                continue;
-            }
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(str::to_ascii_lowercase);
-            if !kind.is_file() || !ext.is_some_and(|e| registry.supports(&e)) {
-                continue;
-            }
-            let Some(rel) = path.strip_prefix(&root).ok().and_then(|r| r.to_str()) else {
-                report.failed += 1;
-                walk_complete = false;
-                continue;
-            };
-            seen.insert(rel.to_owned());
-            match process_file(
-                db,
-                registry,
-                report.folder_id,
-                &root,
-                rel,
-                cfg,
-                counter,
-                embedder,
-            ) {
-                Ok(o) => match o.change {
-                    Change::New => report.new += 1,
-                    Change::Reindex => report.reindexed += 1,
-                    Change::Skip => report.skipped += 1,
-                },
-                Err(_) => report.failed += 1,
-            }
+    for rel in plan.new.iter().chain(&plan.reindex) {
+        match process_file(db, registry, folder_id, &root, rel, cfg, counter, embedder) {
+            Ok(o) => match o.change {
+                Change::New => report.new += 1,
+                Change::Reindex => report.reindexed += 1,
+                Change::Skip => report.skipped += 1,
+            },
+            Err(_) => report.failed += 1,
         }
     }
-    if walk_complete {
-        for (doc, rel) in db.folder_documents(report.folder_id)? {
-            if !seen.contains(&rel) {
-                db.delete_document(doc)?;
-                report.removed += 1;
-            }
+    for rel in &plan.delete {
+        if let Some((doc, _)) = db.document_state(folder_id, rel)? {
+            db.delete_document(doc)?;
+            report.removed += 1;
         }
     }
     Ok(report)

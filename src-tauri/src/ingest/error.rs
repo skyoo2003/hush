@@ -77,4 +77,8 @@ pub enum PipelineError {
     Embed(#[source] crate::rag::error::RagError),
     #[error(transparent)]
     Storage(#[from] crate::storage::error::StorageError),
+    #[error("file kept changing during indexing")]
+    Unstable,
+    #[error("invalid exclude pattern")]
+    Exclude(#[source] ignore::Error),
 }

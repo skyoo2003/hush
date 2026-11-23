@@ -9,7 +9,7 @@ pub mod storage;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::EnvFilter;
@@ -35,31 +35,86 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         tracing::info!(?labels, "app started");
         let db = open_storage(&app.path().app_data_dir()?)
             .inspect_err(|e| tracing::error!(error = %e, "storage open failed"))?;
+        let db = Arc::new(db);
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db)?);
         app.manage(net::Client::new(guard)?);
-        app.manage(db);
-        load_search(app.handle(), app.path().app_data_dir()?.join("models"));
+        app.manage(db.clone());
+        load_model(app.handle(), app.path().app_data_dir()?.join("models"), db);
         register_quick_search_shortcut(app.handle())?;
         Ok(())
     })
 }
 
-/// Loads the embedding model off the main thread. Until it is managed, or if it fails,
-/// `search` returns `model_missing`.
-fn load_search<R: Runtime>(app: &AppHandle<R>, models_dir: std::path::PathBuf) {
+/// Loads the embedding model off the main thread, then starts search and indexing. Until
+/// it is managed, or if it fails, `search` returns `model_missing` and nothing is indexed.
+fn load_model<R: Runtime>(
+    app: &AppHandle<R>,
+    models_dir: std::path::PathBuf,
+    db: Arc<storage::db::Db>,
+) {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         match rag::embedder::BertEmbedder::load(&models_dir, rag::embedder::MODELS[0].id) {
             Ok(e) => {
+                let e = Arc::new(e);
                 app.manage(rag::hybrid::SearchService::new(
-                    Arc::new(e),
+                    e.clone(),
                     Box::new(rag::hybrid::NoopReranker),
                 ));
+                start_indexing(&app, db, e);
             }
             // RagError messages carry no paths.
             Err(e) => tracing::warn!(error = %e, "embedding model not loaded; search is off"),
         }
     });
+}
+
+/// Starts the index queue and rescans every active folder once. Runs on a blocking thread.
+fn start_indexing<R: Runtime>(
+    app: &AppHandle<R>,
+    db: Arc<storage::db::Db>,
+    embedder: Arc<rag::embedder::BertEmbedder>,
+) {
+    use ingest::queue::{IndexQueue, QueueConfig, Services, PROGRESS_EVENT};
+    use rag::embedder::Embedder;
+    // A changed model clears every hash first, so the scan below reindexes everything.
+    if let Err(e) = db.sync_embedding_model(embedder.model_id()) {
+        tracing::warn!(error = %e, "embedding model check failed; indexing is off");
+        return;
+    }
+    let svc = Services {
+        db: db.clone(),
+        registry: ingest::parser::ParserRegistry::new(),
+        chunker: ingest::chunker::ChunkerConfig::default(),
+        counter: embedder.clone(),
+        embedder,
+    };
+    let emitter = app.clone();
+    let queue = match IndexQueue::start(
+        svc,
+        QueueConfig::default(),
+        tokio_util::sync::CancellationToken::new(),
+        move |p| {
+            let _ = emitter.emit(PROGRESS_EVENT, p);
+        },
+    ) {
+        Ok(q) => q,
+        Err(e) => {
+            tracing::warn!(error = %e, "index queue did not start");
+            return;
+        }
+    };
+    match db.active_folders() {
+        Ok(folders) => {
+            for (id, path) in folders {
+                if let Err(e) = queue.rescan(id, std::path::Path::new(&path)) {
+                    tracing::warn!(folder_id = id, error = %e, "startup scan failed");
+                }
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "folders not read; startup scan skipped"),
+    }
+    app.manage(queue);
 }
 
 fn register_quick_search_shortcut<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
@@ -223,7 +278,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.new, 1);
-        app.manage(db);
+        app.manage(Arc::new(db));
         app.manage(rag::hybrid::SearchService::new(
             Arc::new(rag::embedder::FakeEmbedder),
             Box::new(rag::hybrid::NoopReranker),
@@ -249,10 +304,10 @@ mod tests {
         let (_dir, db) = storage::db::tests::temp_db();
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
         app.manage(net::Client::new(guard).unwrap());
-        app.manage(db);
+        app.manage(Arc::new(db));
         let main = window(&app, "main");
         let net = app.state::<net::Client>();
-        let db = app.state::<storage::db::Db>();
+        let db = app.state::<Arc<storage::db::Db>>();
         assert!(net.guard().is_enabled());
 
         for on in [false, true] {
