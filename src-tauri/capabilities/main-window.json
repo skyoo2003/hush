@@ -5,6 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "allow-list-folders",
+    "allow-add-watched-folder",
+    "allow-remove-watched-folder",
+    "allow-get-index-status",
     "allow-get-settings",
     "allow-set-air-gap",
     "allow-list-models",

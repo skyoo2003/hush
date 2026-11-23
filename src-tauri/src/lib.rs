@@ -24,11 +24,16 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::copy_citation,
         commands::hide_window,
         commands::list_folders,
+        commands::add_watched_folder,
+        commands::remove_watched_folder,
+        commands::get_index_status,
         commands::get_settings,
         commands::set_air_gap,
         commands::list_models,
         commands::export_pack,
     ])
+    // No window is granted a dialog permission: only `add_watched_folder` opens the picker.
+    .plugin(tauri_plugin_dialog::init())
     .setup(|app| {
         init_tracing(&app.path().app_log_dir()?)?;
         let labels: Vec<String> = app.webview_windows().into_keys().collect();
@@ -252,9 +257,35 @@ mod tests {
         assert_eq!(err["code"], "model_missing", "got {err}");
         assert!(invoke(&quick, "hide_window").is_ok());
 
-        assert_not_implemented(invoke(&main, "list_folders"));
         assert_acl_denied(invoke_with(&main, "search", query()));
-        assert_acl_denied(invoke(&quick, "set_air_gap"));
+        for cmd in [
+            "set_air_gap",
+            "list_folders",
+            "add_watched_folder",
+            "remove_watched_folder",
+            "get_index_status",
+        ] {
+            assert_acl_denied(invoke(&quick, cmd));
+        }
+        // The dialog plugin is registered, but no window may call it directly.
+        assert_acl_denied(invoke(&main, "plugin:dialog|open"));
+        assert_acl_denied(invoke(&quick, "plugin:dialog|open"));
+        assert_not_implemented(invoke(&main, "list_models"));
+
+        let (_dir, db) = storage::db::tests::temp_db();
+        app.manage(Arc::new(db));
+        let folders = invoke(&main, "list_folders").unwrap();
+        assert_eq!(
+            folders.deserialize::<serde_json::Value>().unwrap(),
+            serde_json::json!([])
+        );
+        let id = || tauri::ipc::InvokeBody::Json(serde_json::json!({ "id": 7 }));
+        let err = invoke_with(&main, "remove_watched_folder", id()).expect_err("unknown folder");
+        assert_eq!(err["code"], "folder_not_found", "got {err}");
+        let status = invoke(&main, "get_index_status").unwrap();
+        let status = status.deserialize::<serde_json::Value>().unwrap();
+        assert_eq!(status["indexing"], false);
+        assert_eq!(status["progress"]["queued"], 0);
     }
 
     #[test]
