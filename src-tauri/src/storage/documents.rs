@@ -20,6 +20,42 @@ fn size_sql(size: u64) -> i64 {
     i64::try_from(size).unwrap_or(i64::MAX)
 }
 
+/// Inserts `chunks` for `doc` inside the caller's transaction. Returns the new row ids in order.
+pub(crate) fn insert_chunks(
+    tx: &rusqlite::Transaction,
+    doc: DocId,
+    chunks: &[Chunk],
+) -> rusqlite::Result<Vec<i64>> {
+    let mut insert = tx.prepare(
+        "INSERT INTO chunks(doc_id, chunk_index, page, section_path, start_offset,
+                            end_offset, bbox_json, text, sha256)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+    )?;
+    chunks
+        .iter()
+        .map(|ch| {
+            let bbox = ch
+                .bbox
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            insert.execute(params![
+                doc.0,
+                ch.chunk_index,
+                ch.page,
+                ch.section_path,
+                ch.start_offset,
+                ch.end_offset,
+                bbox,
+                ch.text,
+                &ch.sha256[..],
+            ])?;
+            Ok(tx.last_insert_rowid())
+        })
+        .collect()
+}
+
 impl Db {
     /// The document's id and its last indexed state; the state is `None` until the first index.
     pub fn document_state(
@@ -97,32 +133,7 @@ impl Db {
         self.write(|c| {
             let tx = c.transaction()?;
             tx.execute("DELETE FROM chunks WHERE doc_id = ?1", [doc.0])?;
-            {
-                let mut insert = tx.prepare(
-                    "INSERT INTO chunks(doc_id, chunk_index, page, section_path, start_offset,
-                                        end_offset, bbox_json, text, sha256)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                )?;
-                for ch in chunks {
-                    let bbox = ch
-                        .bbox
-                        .as_ref()
-                        .map(serde_json::to_string)
-                        .transpose()
-                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-                    insert.execute(params![
-                        doc.0,
-                        ch.chunk_index,
-                        ch.page,
-                        ch.section_path,
-                        ch.start_offset,
-                        ch.end_offset,
-                        bbox,
-                        ch.text,
-                        &ch.sha256[..],
-                    ])?;
-                }
-            }
+            insert_chunks(&tx, doc, chunks)?;
             tx.execute(
                 "UPDATE documents SET sha256 = ?2, size = ?3, mtime = ?4, status = 'indexed',
                         error_code = NULL, indexed_at = ?5, needs_ocr = ?6

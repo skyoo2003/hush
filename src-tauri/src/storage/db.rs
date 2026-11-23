@@ -24,6 +24,9 @@ const CACHE_BUDGET_KIB: i64 = 1 << 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ChunkId(pub i64);
+
 pub struct Db {
     writer: Mutex<Connection>,
     readers: Vec<Mutex<Connection>>,

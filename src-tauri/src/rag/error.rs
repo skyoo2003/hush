@@ -18,4 +18,8 @@ pub enum RagError {
     // Fixed message: tokenizer errors can quote their input.
     #[error("tokenizer failed")]
     Tokenizer,
+    #[error("embedding count or dimension does not match")]
+    EmbeddingShape,
+    #[error(transparent)]
+    Storage(#[from] crate::storage::error::StorageError),
 }
