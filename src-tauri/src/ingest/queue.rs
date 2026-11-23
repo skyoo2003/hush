@@ -500,7 +500,7 @@ impl Shared {
             return Ok(Settle::Dropped);
         }
         Ok(match pipeline::commit(&self.svc.db, parsed, &embeddings)? {
-            Commit::Done(_) | Commit::Gone(_) => Settle::Done,
+            Commit::Done(_) | Commit::Gone(_) | Commit::Unavailable => Settle::Done,
             Commit::Changed => Settle::Requeue,
         })
     }
@@ -830,6 +830,28 @@ mod tests {
         assert!(q.wait_idle(WAIT));
         assert_eq!(count(&f.db, "SELECT count(*) FROM documents"), 0);
         assert_eq!(count(&f.db, "SELECT count(*) FROM chunks"), 0);
+    }
+
+    #[test]
+    fn a_root_unplugged_during_indexing_keeps_the_document() {
+        let f = fixture(&[("a.txt", "alpha beta")]);
+        let first = start(&f, Arc::new(FakeEmbedder), CancellationToken::new(), |_| {});
+        first.rescan(f.folder, &f.root).unwrap();
+        assert!(first.wait_idle(WAIT));
+        drop(first);
+        std::fs::write(f.root.join("a.txt"), "gamma delta").unwrap();
+        let (root, gone) = (f.root.clone(), f.root.with_file_name("Unplugged"));
+        let hook = move || std::fs::rename(&root, &gone).unwrap();
+        let q = start(
+            &f,
+            Arc::new(HookEmbedder::with(hook)),
+            CancellationToken::new(),
+            |_| {},
+        );
+        q.submit(job(&f, "a.txt", Reason::Reindex));
+        assert!(q.wait_idle(WAIT));
+        assert_eq!(count(&f.db, "SELECT count(*) FROM documents"), 1);
+        assert_eq!(count(&f.db, "SELECT count(*) FROM chunks"), 1);
     }
 
     #[test]
