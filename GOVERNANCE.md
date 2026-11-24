@@ -30,7 +30,15 @@ A contributor with a steady record of reviewed, merged work can be nominated by 
 
 ## Releases
 
-Maintainers tag releases from `main` after CI passes. Every release ships its full corresponding source under GPL-3.0-or-later: the source archive of the tag is uploaded with the binaries. Releases go to GitHub Releases and Homebrew only.
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) ([ADR-021](docs/decisions.md)):
+
+1. A maintainer bumps the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`, adds its CHANGELOG.md section, and merges that to `main` with green CI.
+2. The lead maintainer pushes the tag `vX.Y.Z` on that `main` commit. A tag ruleset lets only repository admins create, move, or delete `v*` tags.
+3. The workflow checks the tag, builds the app without secrets, and waits for the lead maintainer's approval in the `release` environment before the signing job may use the Developer ID certificate and notarization key.
+4. The app and its DMG are signed, notarized by Apple, and stapled. The draft release carries the DMG, the full corresponding source archive of the tag, the CycloneDX SBOM, `THIRD_PARTY_NOTICES.txt`, and `SHA256SUMS`, each with a build provenance attestation.
+5. A maintainer checks the draft DMG with Gatekeeper on a clean Mac and then publishes it.
+
+Every release ships its full corresponding source under GPL-3.0-or-later. Releases go to GitHub Releases and Homebrew only.
 
 ## License and contributions
 
