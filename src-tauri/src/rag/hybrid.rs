@@ -10,6 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::embedder::Embedder;
 use super::error::RagError;
+use super::query_parser::QueryFilter;
 use super::vector_store::{ChunkDetail, SearchFilter};
 use crate::storage::db::{ChunkId, Db};
 
@@ -78,6 +79,8 @@ pub struct SearchResults {
     /// Cosine similarities of all KNN candidates, descending. The relevance signal for an
     /// insufficient-evidence check; RRF scores cannot serve it.
     pub scores: Vec<f32>,
+    /// Operators parsed from the query, for the read-only chips. Set by the `search` command.
+    pub filters: Vec<QueryFilter>,
 }
 
 pub struct Candidate {
@@ -170,6 +173,7 @@ impl SearchService {
             hits,
             top_score: scores.first().copied().unwrap_or(0.0),
             scores,
+            filters: Vec::new(),
         })
     }
 }
@@ -214,12 +218,7 @@ fn hit(c: Candidate, terms: &[String]) -> SearchHit {
     SearchHit {
         chunk_id: c.chunk_id.0,
         doc_id: d.doc_id.0,
-        file_name: d
-            .rel_path
-            .rsplit('/')
-            .next()
-            .unwrap_or_default()
-            .to_string(),
+        file_name: file_name(&d.rel_path).to_string(),
         rel_path: d.rel_path,
         folder_label: d.folder_label,
         page: d.page,
@@ -230,6 +229,27 @@ fn hit(c: Candidate, terms: &[String]) -> SearchHit {
         match_kind: c.match_kind,
         modified: d.mtime.map(|ns| ns / 1_000_000),
     }
+}
+
+fn file_name(rel_path: &str) -> &str {
+    rel_path.rsplit('/').next().unwrap_or_default()
+}
+
+/// `[file name, p.X] "excerpt"`, with the section path in place of a missing page. The excerpt is
+/// the chunk's start, whitespace collapsed, cut at `SNIPPET_CHARS` chars.
+pub fn citation(d: &ChunkDetail) -> String {
+    let name = file_name(&d.rel_path);
+    let head = match (d.page, &d.section_path) {
+        (Some(p), _) => format!("{name}, p.{p}"),
+        (None, Some(s)) => format!("{name}, {s}"),
+        (None, None) => name.to_string(),
+    };
+    let text = d.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let excerpt = match text.char_indices().nth(SNIPPET_CHARS) {
+        Some((cut, _)) => format!("{}…", text[..cut].trim_end()),
+        None => text,
+    };
+    format!("[{head}] \"{excerpt}\"")
 }
 
 /// Byte ranges of maximal alphanumeric runs.
@@ -330,6 +350,44 @@ mod tests {
     use crate::rag::vector_store::DIM;
     use crate::storage::db::tests::temp_db;
     use crate::storage::db::DocId;
+
+    fn detail(page: Option<u32>, section: Option<&str>, text: &str) -> ChunkDetail {
+        ChunkDetail {
+            doc_id: DocId(1),
+            text: text.into(),
+            page,
+            section_path: section.map(Into::into),
+            rel_path: "legal/terms.pdf".into(),
+            folder_label: "Contracts".into(),
+            mtime: None,
+        }
+    }
+
+    #[test]
+    fn citation_names_the_file_and_page_or_section() {
+        let text = "Either party may\n  terminate.";
+        assert_eq!(
+            citation(&detail(Some(3), Some("Termination"), text)),
+            "[terms.pdf, p.3] \"Either party may terminate.\""
+        );
+        assert_eq!(
+            citation(&detail(None, Some("Termination > Notice"), text)),
+            "[terms.pdf, Termination > Notice] \"Either party may terminate.\""
+        );
+        assert_eq!(
+            citation(&detail(None, None, text)),
+            "[terms.pdf] \"Either party may terminate.\""
+        );
+    }
+
+    #[test]
+    fn citation_cuts_a_long_excerpt_at_a_char_boundary() {
+        let c = citation(&detail(Some(1), None, &"가".repeat(SNIPPET_CHARS + 5)));
+        assert_eq!(
+            c,
+            format!("[terms.pdf, p.1] \"{}…\"", "가".repeat(SNIPPET_CHARS))
+        );
+    }
 
     fn service(e: impl Embedder + 'static) -> SearchService {
         SearchService::new(Arc::new(e), Box::new(NoopReranker))

@@ -10,6 +10,7 @@ type Res<T> = Result<T, Box<dyn Error>>;
 const COMMANDS: &[&str] = &[
     "search",
     "open_source",
+    "reveal_source",
     "copy_citation",
     "hide_window",
     "list_folders",

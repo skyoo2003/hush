@@ -17,10 +17,13 @@ pub const DIM: usize = 384;
 /// sqlite-vec's largest accepted `k` (SQLITE_VEC_VEC0_K_MAX).
 const MAX_K: usize = 4096;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "lowercase")]
 pub enum KindFilter {
     Text,
     Pdf,
+    #[serde(rename = "doc")]
     Docx,
     Image,
 }
@@ -48,6 +51,8 @@ pub struct SearchFilter {
     pub kinds: Vec<KindFilter>,
     pub modified_after: Option<i64>,
     pub modified_before: Option<i64>,
+    /// Phrases a chunk must contain, each matched as an FTS5 phrase (same tokens, in order).
+    pub phrases: Vec<String>,
 }
 
 /// Shared WHERE fragment over `documents d`. Values are bound, never spliced in.
@@ -57,7 +62,8 @@ macro_rules! filter_sql {
          AND (:exts IS NULL OR d.ext IN (SELECT value FROM json_each(:exts)))
          AND (:kind_exts IS NULL OR d.ext IN (SELECT value FROM json_each(:kind_exts)))
          AND (:after IS NULL OR d.mtime >= :after)
-         AND (:before IS NULL OR d.mtime < :before)"
+         AND (:before IS NULL OR d.mtime < :before)
+         AND (:phrases IS NULL OR c.id IN (SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH :phrases))"
     };
 }
 
@@ -100,6 +106,7 @@ struct FilterParams {
     kind_exts: Option<String>,
     after: Option<i64>,
     before: Option<i64>,
+    phrases: Option<String>,
 }
 
 fn json_list<T: serde::Serialize>(v: &[T]) -> rusqlite::Result<Option<String>> {
@@ -120,6 +127,7 @@ impl FilterParams {
             kind_exts: json_list(&kind_exts)?,
             after: f.modified_after,
             before: f.modified_before,
+            phrases: phrase_query(&f.phrases),
         })
     }
 
@@ -130,6 +138,7 @@ impl FilterParams {
             (":kind_exts", &self.kind_exts),
             (":after", &self.after),
             (":before", &self.before),
+            (":phrases", &self.phrases),
         ]
     }
 }
@@ -156,6 +165,17 @@ fn fts_query(query: &str) -> String {
         .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
         .collect::<Vec<_>>()
         .join(" OR ")
+}
+
+/// Each phrase as a quoted FTS5 string, ANDed. Phrases without an alphanumeric char are dropped.
+fn phrase_query(phrases: &[String]) -> Option<String> {
+    let q = phrases
+        .iter()
+        .filter(|p| p.chars().any(char::is_alphanumeric))
+        .map(|p| format!("\"{}\"", p.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    (!q.is_empty()).then_some(q)
 }
 
 impl Db {
@@ -634,9 +654,20 @@ mod tests {
                 kinds: vec![KindFilter::Text],
                 modified_after: Some(300),
                 modified_before: Some(400),
+                phrases: vec!["Shared  THREE".into()],
             }),
             set(&[d3])
         );
+        let phrases = |p: &[&str]| SearchFilter {
+            phrases: exts(p),
+            ..Default::default()
+        };
+        assert_eq!(docs(phrases(&["shared two"])), set(&[d2]));
+        assert_eq!(docs(phrases(&["two shared"])), set(&[]));
+        assert_eq!(docs(phrases(&["shared", "four"])), set(&[d4]));
+        // FTS syntax inside a phrase is literal, and a phrase of only symbols adds no constraint.
+        assert_eq!(docs(phrases(&["shared\" OR \"one"])), set(&[]));
+        assert_eq!(docs(phrases(&["*"])), set(&[d1, d2, d3, d4]));
     }
 
     #[test]

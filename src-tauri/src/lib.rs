@@ -20,6 +20,7 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
     b.invoke_handler(tauri::generate_handler![
         commands::search,
         commands::open_source,
+        commands::reveal_source,
         commands::copy_citation,
         commands::hide_window,
         commands::list_folders,
@@ -250,9 +251,12 @@ mod tests {
             "list_folders",
             "add_watched_folder",
             "remove_watched_folder",
-            "get_index_status",
         ] {
             assert_acl_denied(invoke(&quick, cmd));
+        }
+        assert!(invoke(&quick, "get_index_status").is_ok());
+        for cmd in ["open_source", "reveal_source", "copy_citation"] {
+            assert_acl_denied(invoke(&main, cmd));
         }
         // The dialog plugin is registered, but no window may call it directly.
         assert_acl_denied(invoke(&main, "plugin:dialog|open"));
@@ -311,6 +315,44 @@ mod tests {
         assert_eq!(hit["fileName"], "plan.txt");
         assert_eq!(hit["matchKind"], "both");
         assert!(res["topScore"].as_f64().unwrap() > 0.0);
+
+        let search = |q: &str| {
+            let body = tauri::ipc::InvokeBody::Json(serde_json::json!({ "query": q }));
+            invoke_with(&quick, "search", body)
+                .unwrap()
+                .deserialize::<serde_json::Value>()
+                .unwrap()
+        };
+        let res = search("\"launch date\" folder:notes ext:txt after:2000");
+        assert_eq!(res["hits"][0]["fileName"], "plan.txt");
+        assert_eq!(
+            res["filters"],
+            serde_json::json!([
+                {"key": "folder", "value": "notes"},
+                {"key": "ext", "value": "txt"},
+                {"key": "after", "value": "2000"},
+            ])
+        );
+        for q in [
+            "launch folder:elsewhere",
+            "launch type:pdf",
+            "\"date launch\"",
+        ] {
+            assert_eq!(search(q)["hits"], serde_json::json!([]), "{q}");
+        }
+        search("ext:txt");
+        let db = app.state::<Arc<storage::db::Db>>();
+        let count: i64 = db
+            .read(|c| {
+                c.query_row(
+                    "SELECT value FROM counters WHERE key = 'search_count'",
+                    [],
+                    |r| r.get(0),
+                )
+            })
+            .unwrap();
+        // Five searches with text; the operator-only one is not counted.
+        assert_eq!(count, 5);
     }
 
     #[test]

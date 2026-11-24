@@ -2,4 +2,5 @@
 pub mod embedder;
 pub mod error;
 pub mod hybrid;
+pub mod query_parser;
 pub mod vector_store;
