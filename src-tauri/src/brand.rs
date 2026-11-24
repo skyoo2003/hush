@@ -7,6 +7,9 @@ pub const BUNDLE_ID: &str = "io.github.skyoo2003.locite";
 pub const KEYCHAIN_SERVICE: &str = "io.github.skyoo2003.locite";
 pub const PACK_EXT: &str = "locitepack";
 pub const SITE_URL: &str = "https://skyoo2003.github.io/locite";
+/// The signed update manifest of the latest GitHub release (ADR-022).
+pub const UPDATE_MANIFEST_URL: &str =
+    "https://github.com/skyoo2003/locite/releases/latest/download/latest.json";
 pub const SPONSOR_URLS: &[&str] = &[
     "https://github.com/sponsors/skyoo2003",
     "https://buymeacoffee.com/skyoo2003",

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Air-Gap mode. ON (the default) blocks every outbound request. OFF allows one starting host per purpose (plus `*.hf.co` redirects for model downloads).
+//! Air-Gap mode. ON (the default) blocks every outbound request. OFF allows one starting host per
+//! purpose, plus one redirect target each: `*.hf.co` for model downloads, the GitHub release asset
+//! host for update checks.
 
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 
@@ -26,7 +28,9 @@ impl NetPurpose {
         match self {
             Self::ModelDownload => "huggingface.co",
             Self::UpdateCheck => {
-                let rest = brand::SITE_URL.split_once("://").map_or("", |(_, r)| r);
+                let rest = brand::UPDATE_MANIFEST_URL
+                    .split_once("://")
+                    .map_or("", |(_, r)| r);
                 rest.split('/').next().unwrap_or(rest)
             }
         }
@@ -40,17 +44,23 @@ pub enum Hop {
     Redirect,
 }
 
+/// GitHub serves release downloads from `github.com` by redirect to this host (ADR-022).
+const RELEASE_ASSET_HOST: &str = "release-assets.githubusercontent.com";
+
 impl NetPurpose {
-    /// Model weights redirect from `huggingface.co` to a regional `*.hf.co` CDN host (ADR-017).
-    /// Only a redirect may reach those hosts; the first request must go to `host()`.
+    /// Model weights redirect from `huggingface.co` to a regional `*.hf.co` CDN host (ADR-017),
+    /// and release files from `github.com` to `RELEASE_ASSET_HOST` (ADR-022). Only a redirect may
+    /// reach those hosts; the first request must go to `host()`.
     fn allows(self, host: &str, hop: Hop) -> bool {
         let host = host.to_ascii_lowercase();
         host == self.host()
             || (hop == Hop::Redirect
-                && self == Self::ModelDownload
-                && host
-                    .strip_suffix(".hf.co")
-                    .is_some_and(|sub| !sub.is_empty()))
+                && match self {
+                    Self::ModelDownload => host
+                        .strip_suffix(".hf.co")
+                        .is_some_and(|sub| !sub.is_empty()),
+                    Self::UpdateCheck => host == RELEASE_ASSET_HOST,
+                })
     }
 }
 
@@ -187,33 +197,49 @@ mod tests {
     }
 
     #[test]
-    fn only_a_model_redirect_may_reach_an_hf_cdn_host() {
+    fn each_purpose_redirects_only_to_its_own_cdn_host() {
         let (_dir, db) = temp_db();
         let guard = AirGapGuard::load(&db).unwrap();
-        let md = NetPurpose::ModelDownload;
-        let cdn = "us.aws.cdn.hf.co";
-        assert!(matches!(
-            guard.check(md, cdn, Hop::Redirect),
-            Err(SecurityError::AirGapEnabled)
-        ));
+        let (md, up) = (NetPurpose::ModelDownload, NetPurpose::UpdateCheck);
+        let (hf, gh) = ("us.aws.cdn.hf.co", RELEASE_ASSET_HOST);
+        for (p, host) in [(md, hf), (up, gh)] {
+            assert!(matches!(
+                guard.check(p, host, Hop::Redirect),
+                Err(SecurityError::AirGapEnabled)
+            ));
+        }
         guard.set_enabled(&db, false).unwrap();
-        assert!(guard.check(md, cdn, Hop::Redirect).is_ok());
-        assert!(guard.check(md, "CDN-LFS.HF.CO", Hop::Redirect).is_ok());
-        assert!(guard.check(md, md.host(), Hop::Redirect).is_ok());
-        for (p, host, hop) in [
-            (md, cdn, Hop::First),
-            (md, "hf.co", Hop::Redirect),
-            (md, "evil-hf.co", Hop::Redirect),
-            (md, "hf.co.evil.example", Hop::Redirect),
-            (NetPurpose::UpdateCheck, cdn, Hop::Redirect),
-        ] {
-            assert!(
-                matches!(
-                    guard.check(p, host, hop),
-                    Err(SecurityError::HostNotAllowed)
-                ),
-                "{p:?} {host} {hop:?}"
-            );
+        #[rustfmt::skip]
+        let table = [
+            (md, hf, Hop::Redirect, true),
+            (md, "CDN-LFS.HF.CO", Hop::Redirect, true),
+            (md, md.host(), Hop::Redirect, true),
+            (md, hf, Hop::First, false),
+            (md, "hf.co", Hop::Redirect, false),
+            (md, "evil-hf.co", Hop::Redirect, false),
+            (md, "hf.co.evil.example", Hop::Redirect, false),
+            (md, gh, Hop::Redirect, false),
+            (up, "github.com", Hop::First, true),
+            (up, "github.com", Hop::Redirect, true),
+            (up, gh, Hop::Redirect, true),
+            (up, "Release-Assets.GitHubUserContent.com", Hop::Redirect, true),
+            (up, gh, Hop::First, false),
+            (up, hf, Hop::Redirect, false),
+            (up, "objects.githubusercontent.com", Hop::Redirect, false),
+            (up, "x.release-assets.githubusercontent.com", Hop::Redirect, false),
+            (up, "release-assets.githubusercontent.com.evil.example", Hop::Redirect, false),
+            (up, "api.github.com", Hop::Redirect, false),
+        ];
+        for (p, host, hop, allowed) in table {
+            let r = guard.check(p, host, hop);
+            if allowed {
+                assert!(r.is_ok(), "{p:?} {host} {hop:?}");
+            } else {
+                assert!(
+                    matches!(r, Err(SecurityError::HostNotAllowed)),
+                    "{p:?} {host} {hop:?}"
+                );
+            }
         }
     }
 
