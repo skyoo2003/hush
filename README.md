@@ -4,7 +4,7 @@
 
 Locite is a desktop app that indexes, searches, and summarizes the documents in folders you choose. Everything runs on your device. Every answer shows where it came from: the file, the page, the location, and the exact excerpt.
 
-> **Status: pre-alpha.** Encrypted storage, the Air-Gap guard, document ingestion, the folder watcher, and hybrid search work in the backend. The search UI, model download, and Q&A are not built yet, so the app is not useful to end users today. Development targets macOS on Apple Silicon only. Expect breaking changes.
+> **Status: pre-alpha.** Encrypted storage, the Air-Gap guard, document ingestion, the folder watcher, and hybrid search work in the backend. Q&A is not built yet, so the app is not useful to end users today. Development targets macOS on Apple Silicon only. Expect breaking changes.
 
 <!-- Screenshots: add once the quick-search UI ships (roadmap week 5).
 ![Quick search](docs/images/quick-search.png)
@@ -28,7 +28,7 @@ The app makes outbound network requests in exactly two cases:
 1. **Model download.** Fetching a model you asked for, from `huggingface.co`.
 2. **Update check.** Checking for a new app version on the project site.
 
-There is no telemetry. Each is allowed to reach one fixed host. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
+There is no telemetry. Each starts at one fixed host (a model download may then follow Hugging Face's redirect to its `*.hf.co` download servers). Every downloaded model file is checked against a SHA-256 pinned in the app, and fully offline machines can import the files instead. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
 
 The code in this repository is all of the code in official builds. There are no private modules, so anyone can check the claim that nothing leaves the device.
 

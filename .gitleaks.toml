@@ -1,9 +1,10 @@
 [extend]
 useDefault = true
 
-# Model manifests pin public model files by SHA-256; the hashes look like API keys to generic-api-key.
+# The model catalog pins public model files by SHA-256; the hashes look like API keys to generic-api-key.
 [[allowlists]]
 description = "SHA-256 pins of public model files"
-paths = ['''^models/[^/]+/manifest\.json$''']
+# The manifests were replaced by the catalog; CI scans full history, so they stay listed.
+paths = ['''^models/catalog\.json$''', '''^models/[^/]+/manifest\.json$''']
 regexes = ['''^[0-9a-f]{64}$''']
 condition = "AND"

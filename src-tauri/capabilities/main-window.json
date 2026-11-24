@@ -16,6 +16,9 @@
     "allow-set-air-gap",
     "allow-set-shortcut",
     "allow-list-models",
+    "allow-download-model",
+    "allow-cancel-model-download",
+    "allow-import-model-file",
     "allow-export-pack",
     "core:event:allow-listen",
     "core:event:allow-unlisten"

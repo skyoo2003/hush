@@ -7,6 +7,8 @@ pub enum NetError {
     Blocked(#[from] SecurityError),
     #[error("only https URLs with a host are allowed")]
     InvalidUrl,
+    #[error("too many redirects")]
+    TooManyRedirects,
     /// Built with `without_url()`, so it never carries the URL.
     #[error("http request failed")]
     Http(#[source] reqwest::Error),

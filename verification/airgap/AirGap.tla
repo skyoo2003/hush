@@ -7,8 +7,10 @@
    - ToggleStore  = on.send_replace; an OFF toggle then returns Ok         (security/airgap.rs)
    - ToggleDrain  = an ON toggle waits for in_flight == 0, then returns Ok (security/airgap.rs)
    - RequestCheck = AirGapGuard::begin: in_flight += 1, then check         (net.rs Client::get)
-   - RequestSend  = reqwest send wins the select                           (net.rs Client::get)
-   - RequestCancel = turned_on wins the select; InFlight drops             (net.rs Client::get)
+   - RequestCheck also covers each redirect hop: get drops the hop's InFlight, then begins the next
+   - RequestSend  = reqwest send wins the select; Body keeps the InFlight  (net.rs Client::get)
+   - RequestCancel = turned_on wins the select; InFlight drops             (net.rs get, Body::chunk)
+   - BodyDone     = the body is read to its end or dropped; InFlight drops (net.rs Body)
    - Restart      = AirGapGuard::load: ON unless the row is "0"            (lib.rs setup) *)
 EXTENDS Naturals
 
@@ -23,7 +25,7 @@ VARIABLES
     mem,      \* AirGapGuard.enabled
     tpc,      \* per toggle: "idle" | "write" | "store" | "drain" | "done"
     tval,     \* per toggle: the value the user asked for
-    rpc,      \* per request: "idle" | "checked" (in flight) | "blocked" | "sent"
+    rpc,      \* per request: "idle" | "checked" (in flight) | "receiving" (sent, body in flight) | "blocked" | "sent"
     restarts,
     uiOn,     \* what the user was last told: the result of the last set_air_gap that returned Ok
     passedWhileOn,   \* a check let a request through while the guard was ON
@@ -80,7 +82,7 @@ ToggleStore(t) ==
 \* ON returns Ok only once no request is in flight, so the UI shows ON.
 ToggleDrain(t) ==
     /\ tpc[t] = "drain"
-    /\ \A r \in Requests : rpc[r] /= "checked"
+    /\ \A r \in Requests : rpc[r] \notin {"checked", "receiving"}
     /\ uiOn' = TRUE
     /\ tpc' = [tpc EXCEPT ![t] = "done"]
     /\ UNCHANGED <<disk, mem, tval, rpc, restarts, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
@@ -94,13 +96,19 @@ RequestCheck(r) ==
 
 RequestSend(r) ==
     /\ rpc[r] = "checked"
-    /\ rpc' = [rpc EXCEPT ![r] = "sent"]
+    /\ rpc' = [rpc EXCEPT ![r] = "receiving"]
     /\ sentAfterOnAck' = (sentAfterOnAck \/ UserExpectsOn)
     /\ UNCHANGED <<disk, mem, tpc, tval, restarts, uiOn, passedWhileOn, onLostOnRestart>>
 
-\* Air-Gap is ON, so turned_on resolves and the request is dropped before it leaves.
+\* The body ends, or the caller drops it. Nothing more leaves for this request.
+BodyDone(r) ==
+    /\ rpc[r] = "receiving"
+    /\ rpc' = [rpc EXCEPT ![r] = "sent"]
+    /\ UNCHANGED <<disk, mem, tpc, tval, restarts, uiOn, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
+
+\* Air-Gap is ON, so turned_on resolves: a request is dropped before it leaves, a body mid-read.
 RequestCancel(r) ==
-    /\ rpc[r] = "checked"
+    /\ rpc[r] \in {"checked", "receiving"}
     /\ mem
     /\ rpc' = [rpc EXCEPT ![r] = "blocked"]
     /\ UNCHANGED <<disk, mem, tpc, tval, restarts, uiOn, passedWhileOn, sentAfterOnAck, onLostOnRestart>>
@@ -125,7 +133,7 @@ Done ==
 
 Next ==
     \/ \E t \in Toggles : ToggleStart(t) \/ ToggleWrite(t) \/ ToggleWriteFails(t) \/ ToggleStore(t) \/ ToggleDrain(t)
-    \/ \E r \in Requests : RequestCheck(r) \/ RequestSend(r) \/ RequestCancel(r)
+    \/ \E r \in Requests : RequestCheck(r) \/ RequestSend(r) \/ BodyDone(r) \/ RequestCancel(r)
     \/ Restart
     \/ Done
 
@@ -137,6 +145,9 @@ CheckedOnlyWhenOff == ~passedWhileOn
 
 \* Once the user is told Air-Gap is ON, no request leaves the app until they turn it OFF.
 NoSendAfterOnAck == ~sentAfterOnAck
+
+\* Once the user is told Air-Gap is ON, no response body is still being read (that is traffic too).
+NoBodyAfterOnAck == ~(UserExpectsOn /\ \E r \in Requests : rpc[r] = "receiving")
 
 \* If the user was last told Air-Gap is ON, a relaunch keeps it ON.
 OnSurvivesRestart == ~onLostOnRestart

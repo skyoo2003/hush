@@ -34,6 +34,9 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::set_air_gap,
         commands::set_shortcut,
         commands::list_models,
+        commands::download_model,
+        commands::cancel_model_download,
+        commands::import_model_file,
         commands::export_pack,
     ])
     // No window is granted a dialog permission: only `add_watched_folder` opens the picker.
@@ -51,32 +54,51 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         app.manage(net::Client::new(guard)?);
         app.manage(db.clone());
         desktop::setup(app.handle(), &db, air_gap)?;
-        load_model(app.handle(), app.path().app_data_dir()?.join("models"), db);
+        app.manage(rag::models::ModelManager::new(
+            app.path().app_data_dir()?.join("models"),
+        ));
+        load_model(app.handle());
         tracing::info!("app ready");
         Ok(())
     })
 }
 
-/// Loads the embedding model off the main thread, then starts search and indexing. Until
-/// it is managed, or if it fails, `search` returns `model_missing` and nothing is indexed.
-fn load_model<R: Runtime>(
-    app: &AppHandle<R>,
-    models_dir: std::path::PathBuf,
-    db: Arc<storage::db::Db>,
-) {
+/// Loads the first installed embedding model off the main thread, then starts search and
+/// indexing. Until it is managed, or if it fails, `search` returns `model_missing` and nothing is
+/// indexed. Called at startup and after a model install; only the first successful call loads.
+pub(crate) fn load_model<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        match rag::embedder::BertEmbedder::load(&models_dir, rag::embedder::MODELS[0].id) {
+        let (Some(models), Some(db)) = (
+            app.try_state::<rag::models::ModelManager>(),
+            app.try_state::<Arc<storage::db::Db>>(),
+        ) else {
+            return;
+        };
+        let installed = rag::embedder::MODELS
+            .iter()
+            .find(|s| models.is_installed(s.id));
+        let Some(spec) = installed else {
+            tracing::info!("no embedding model installed; search is off");
+            return;
+        };
+        if !models.claim_embedder_load() {
+            return;
+        }
+        match rag::embedder::BertEmbedder::load(models.dir(), spec.id) {
             Ok(e) => {
                 let e = Arc::new(e);
                 app.manage(rag::hybrid::SearchService::new(
                     e.clone(),
                     Box::new(rag::hybrid::NoopReranker),
                 ));
-                start_indexing(&app, db, e);
+                start_indexing(&app, db.inner().clone(), e);
             }
-            // RagError messages carry no paths.
-            Err(e) => tracing::warn!(error = %e, "embedding model not loaded; search is off"),
+            Err(e) => {
+                models.release_embedder_load();
+                // RagError messages carry no paths.
+                tracing::warn!(error = %e, "embedding model not loaded; search is off");
+            }
         }
     });
 }
@@ -269,7 +291,15 @@ mod tests {
         // The dialog plugin is registered, but no window may call it directly.
         assert_acl_denied(invoke(&main, "plugin:dialog|open"));
         assert_acl_denied(invoke(&quick, "plugin:dialog|open"));
-        assert_not_implemented(invoke(&main, "list_models"));
+        for cmd in [
+            "list_models",
+            "download_model",
+            "cancel_model_download",
+            "import_model_file",
+        ] {
+            assert_acl_denied(invoke(&quick, cmd));
+        }
+        assert_not_implemented(invoke(&main, "export_pack"));
 
         let (_dir, db) = storage::db::tests::temp_db();
         app.manage(Arc::new(db));
@@ -285,6 +315,31 @@ mod tests {
         let status = status.deserialize::<serde_json::Value>().unwrap();
         assert_eq!(status["indexing"], false);
         assert_eq!(status["progress"]["queued"], 0);
+
+        let models_dir = tempfile::tempdir().unwrap();
+        app.manage(rag::models::ModelManager::new(models_dir.path().into()));
+        let guard =
+            security::airgap::AirGapGuard::load(&app.state::<Arc<storage::db::Db>>()).unwrap();
+        app.manage(net::Client::new(Arc::new(guard)).unwrap());
+        let list = invoke(&main, "list_models").unwrap();
+        let list = list.deserialize::<serde_json::Value>().unwrap();
+        assert_eq!(list[0]["id"], rag::embedder::MODELS[0].id);
+        assert_eq!(list[0]["installed"], false);
+        let id = rag::embedder::MODELS[0].id;
+        let body = |off: bool| {
+            tauri::ipc::InvokeBody::Json(
+                serde_json::json!({ "id": id, "airGapOffForDownload": off }),
+            )
+        };
+        let err = invoke_with(&main, "download_model", body(false)).expect_err("air-gap is on");
+        assert_eq!(err["code"], "air_gap_enabled", "got {err}");
+        let unknown = tauri::ipc::InvokeBody::Json(
+            serde_json::json!({ "id": "nope", "airGapOffForDownload": false }),
+        );
+        let err = invoke_with(&main, "download_model", unknown).expect_err("unknown id");
+        assert_eq!(err["code"], "not_in_catalog", "got {err}");
+        assert!(app.state::<net::Client>().guard().is_enabled());
+        assert_eq!(app.state::<net::Client>().sent_count(), 0);
     }
 
     #[test]

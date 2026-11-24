@@ -64,19 +64,13 @@ pub const MODELS: &[ModelSpec] = &[
     },
 ];
 
-/// `models/{id}/manifest.json`: lowercase hex sha256 per file name.
-#[derive(serde::Deserialize)]
-struct Manifest {
-    files: HashMap<String, String>,
-}
-
 /// The tokenizer stays loaded (the chunker counts tokens with it); the model idles out.
 pub struct BertEmbedder {
     spec: &'static ModelSpec,
     config: Config,
     tokenizer: Tokenizer,
     models_dir: PathBuf,
-    /// From the manifest at load time; a reload must match it.
+    /// From the catalog at load time; a reload must match it.
     weights_sha256: String,
     model: IdleSlot<BertModel>,
 }
@@ -87,20 +81,33 @@ fn read_model_file(models_dir: &Path, id: &str, name: &str) -> Result<Vec<u8>, R
 }
 
 impl BertEmbedder {
-    /// Reads `models_dir/{id}/`, checks every file against `manifest.json`, then builds the
-    /// model from the bytes that were hashed, so a file swapped after the check is never loaded.
+    /// Reads `models_dir/{id}/`, checks every file against its sha256 in `models/catalog.json`,
+    /// then builds the model from the bytes that were hashed, so a file swapped after the check
+    /// is never loaded.
     pub fn load(models_dir: &Path, id: &str) -> Result<Self, RagError> {
+        let entry = super::models::find(id).ok_or(RagError::UnknownModel)?;
+        let pins = entry
+            .files
+            .iter()
+            .map(|f| (f.name.clone(), f.sha256.clone()))
+            .collect();
+        Self::load_pinned(models_dir, id, &pins)
+    }
+
+    /// `pins`: lowercase hex sha256 per file name.
+    fn load_pinned(
+        models_dir: &Path,
+        id: &str,
+        pins: &HashMap<String, String>,
+    ) -> Result<Self, RagError> {
         let spec = MODELS
             .iter()
             .find(|s| s.id == id)
             .ok_or(RagError::UnknownModel)?;
         let read = |name: &str| read_model_file(models_dir, spec.id, name);
-        let manifest: Manifest =
-            serde_json::from_slice(&read("manifest.json")?).map_err(RagError::Manifest)?;
         let verified = |name: &'static str| {
             let data = read(name)?;
-            let want = manifest.files.get(name).map(|h| h.to_ascii_lowercase());
-            if want.as_deref() == Some(hex(&Sha256::digest(&data)).as_str()) {
+            if pins.get(name).map(String::as_str) == Some(hex(&Sha256::digest(&data)).as_str()) {
                 Ok(data)
             } else {
                 Err(RagError::HashMismatch(name))
@@ -111,7 +118,7 @@ impl BertEmbedder {
         let weights = verified(WEIGHTS)?;
         let weights_sha256 = hex(&Sha256::digest(&weights));
 
-        let config: Config = serde_json::from_slice(&config).map_err(RagError::Manifest)?;
+        let config: Config = serde_json::from_slice(&config).map_err(RagError::Config)?;
         let mut tokenizer = Tokenizer::from_bytes(tokenizer).map_err(|_| RagError::Tokenizer)?;
         let model = IdleSlot::new(MODEL_IDLE);
         model.get(|| build_model(weights, &config))?;
@@ -308,7 +315,7 @@ impl<T> Drop for IdleSlot<T> {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -393,25 +400,22 @@ mod tests {
         assert!(dot(&q, &p[0]) > dot(&q, &p[1]));
     }
 
-    /// Writes `{dir}/m/{id}/` with the given files and a manifest of their real hashes,
-    /// then applies `tamper`.
+    /// Writes `{dir}/{id}/` with the given files, pins their real hashes, then applies `tamper`.
     fn model_dir(
         id: &str,
         files: &[(&str, &[u8])],
         tamper: impl FnOnce(&Path),
-    ) -> tempfile::TempDir {
+    ) -> (tempfile::TempDir, HashMap<String, String>) {
         let dir = tempfile::tempdir().unwrap();
         let m = dir.path().join(id);
         std::fs::create_dir_all(&m).unwrap();
         let mut hashes = HashMap::new();
         for (name, data) in files {
             std::fs::write(m.join(name), data).unwrap();
-            hashes.insert(*name, hex(&Sha256::digest(data)));
+            hashes.insert(name.to_string(), hex(&Sha256::digest(data)));
         }
-        let manifest = serde_json::json!({ "files": hashes });
-        std::fs::write(m.join("manifest.json"), manifest.to_string()).unwrap();
         tamper(&m);
-        dir
+        (dir, hashes)
     }
 
     const JUNK: &[(&str, &[u8])] = &[
@@ -455,39 +459,39 @@ mod tests {
 
     #[test]
     fn unknown_model_is_rejected() {
-        let d = model_dir("x", JUNK, |_| {});
+        let (d, pins) = model_dir("x", JUNK, |_| {});
         assert!(matches!(
-            BertEmbedder::load(d.path(), "x"),
+            BertEmbedder::load_pinned(d.path(), "x", &pins),
             Err(RagError::UnknownModel)
         ));
     }
 
     #[test]
-    fn a_file_that_differs_from_its_manifest_is_never_parsed() {
+    fn a_file_that_differs_from_its_pin_is_never_parsed() {
         let id = MODELS[0].id;
-        let d = model_dir(id, JUNK, |m| {
+        let (d, pins) = model_dir(id, JUNK, |m| {
             std::fs::write(m.join("model.safetensors"), b"swapped").unwrap()
         });
         assert!(matches!(
-            BertEmbedder::load(d.path(), id),
+            BertEmbedder::load_pinned(d.path(), id, &pins),
             Err(RagError::HashMismatch("model.safetensors"))
         ));
         // Same junk with matching hashes gets past the check and fails in parsing instead.
-        let d = model_dir(id, JUNK, |_| {});
+        let (d, pins) = model_dir(id, JUNK, |_| {});
         assert!(!matches!(
-            BertEmbedder::load(d.path(), id),
+            BertEmbedder::load_pinned(d.path(), id, &pins),
             Err(RagError::HashMismatch(_))
         ));
     }
 
     #[test]
-    fn a_file_missing_from_the_manifest_is_a_mismatch() {
+    fn an_unpinned_file_is_a_mismatch() {
         let id = MODELS[0].id;
-        let d = model_dir(id, &JUNK[..2], |m| {
+        let (d, pins) = model_dir(id, &JUNK[..2], |m| {
             std::fs::write(m.join("model.safetensors"), b"x").unwrap()
         });
         assert!(matches!(
-            BertEmbedder::load(d.path(), id),
+            BertEmbedder::load_pinned(d.path(), id, &pins),
             Err(RagError::HashMismatch("model.safetensors"))
         ));
     }
