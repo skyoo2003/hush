@@ -2,10 +2,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
+import { t } from "../i18n";
 import type { DownloadProgress } from "../ipc/DownloadProgress";
 import type { ImportedFile } from "../ipc/ImportedFile";
 import type { ModelInfo } from "../ipc/ModelInfo";
-import type { ModelKind } from "../ipc/ModelKind";
 import type { Settings } from "../ipc/Settings";
 import {
 	formatBytes,
@@ -16,18 +16,13 @@ import {
 	percent,
 } from "../models";
 
-const KINDS: Record<ModelKind, string> = {
-	embedding: "Embedding",
-	reranker: "Reranker",
-	llm: "Language model",
-};
-
 function FileList({ model }: { model: ModelInfo }) {
 	return (
 		<ul>
 			{model.files.map((f) => (
 				<li key={f.name}>
-					<code>{f.name}</code> ({formatBytes(f.size)}){f.installed ? ", installed" : ""}
+					<code>{f.name}</code> ({formatBytes(f.size)})
+					{f.installed ? t("models.file.installed") : ""}
 					<br />
 					{/* Text, not a link: the webview must never request a URL itself (rule 2). */}
 					<code>{f.url}</code>
@@ -51,10 +46,10 @@ export function SecurityPanel() {
 	const refresh = useCallback(() => {
 		invoke<Settings>("get_settings").then(
 			(s) => setAirGap(s.airGap),
-			() => setError("Could not read the Air-Gap setting."),
+			() => setError(t("security.readFailed")),
 		);
 		invoke<ModelInfo[]>("list_models").then(setModels, () =>
-			setError("Could not read the model list."),
+			setError(t("models.listFailed")),
 		);
 	}, []);
 
@@ -75,7 +70,7 @@ export function SecurityPanel() {
 			await invoke("set_air_gap", { enabled: next });
 			setAirGap(next);
 		} catch {
-			setError("Could not save the Air-Gap setting. It is unchanged.");
+			setError(t("security.saveFailed"));
 		} finally {
 			setToggling(false);
 		}
@@ -89,7 +84,7 @@ export function SecurityPanel() {
 		if (airGapOffForDownload) setAirGap(false);
 		try {
 			await invoke("download_model", { id, airGapOffForDownload });
-			setNotice(`${id} is installed.`);
+			setNotice(t("models.installed", { id }));
 		} catch (e) {
 			setError(modelErrorText(e));
 		} finally {
@@ -115,7 +110,7 @@ export function SecurityPanel() {
 
 	return (
 		<section aria-labelledby="security-heading">
-			<h2 id="security-heading">Security</h2>
+			<h2 id="security-heading">{t("security.heading")}</h2>
 			<label>
 				<input
 					type="checkbox"
@@ -125,41 +120,36 @@ export function SecurityPanel() {
 					disabled={airGap === null || toggling}
 					onChange={(e) => void toggle(e.target.checked)}
 				/>
-				Air-Gap mode
+				{t("security.airGapLabel")}
 			</label>
 			<p>
-				{airGap === false
-					? "Off. Only model downloads and update checks may reach the network."
-					: "On. Nothing leaves this computer."}
+				{airGap === false ? t("security.airGapOff") : t("security.airGapOn")}
 			</p>
 
-			<h3>Models</h3>
+			<h3>{t("models.heading")}</h3>
 			{firstRun && (
 				<fieldset>
-					<legend>No embedding model is installed, so search and indexing are off.</legend>
+					<legend>{t("models.firstRun.legend")}</legend>
 					<p>
-						Install {firstRun.id} ({formatBytes(firstRun.size)}) one of two ways.
+						{t("models.firstRun.install", {
+							id: firstRun.id,
+							size: formatBytes(firstRun.size),
+						})}
 					</p>
 					<button
 						type="button"
 						disabled={firstRun.downloading || airGap === null}
 						onClick={() => void download(firstRun.id, airGap === true)}
 					>
-						{airGap ? "Turn off Air-Gap for this download" : "Download"}
+						{airGap
+							? t("models.firstRun.downloadAirGap")
+							: t("models.download")}
 					</button>
-					{airGap && (
-						<p>
-							Air-Gap turns back on when the download ends. Only huggingface.co and its download
-							servers are contacted, and nothing about your documents is sent.
-						</p>
-					)}
+					{airGap && <p>{t("models.firstRun.airGapNote")}</p>}
 					<button type="button" onClick={() => void importFile()}>
-						Import a file…
+						{t("models.importFile")}
 					</button>
-					<p>
-						On a computer with no network, download these files on another computer, copy them
-						over, and import each one:
-					</p>
+					<p>{t("models.firstRun.offline")}</p>
 					<FileList model={firstRun} />
 				</fieldset>
 			)}
@@ -169,23 +159,24 @@ export function SecurityPanel() {
 					const p = progress[m.id];
 					return (
 						<li key={m.id}>
-							<strong>{m.id}</strong> · {KINDS[m.kind]} · {m.license} · {formatBytes(m.size)}
+							<strong>{m.id}</strong> · {t(`models.kind.${m.kind}`)} ·{" "}
+							{m.license} · {formatBytes(m.size)}
 							{m.installed ? (
-								<span> · Installed</span>
+								<span> · {t("models.installedBadge")}</span>
 							) : m.downloading ? (
 								<span>
 									{" "}
 									<progress
 										max={100}
 										value={p ? percent(p.done, p.total) : undefined}
-										aria-label={`Downloading ${m.id}`}
+										aria-label={t("models.downloading", { id: m.id })}
 									/>{" "}
-									{p ? `${percent(p.done, p.total)}%` : "Starting…"}{" "}
+									{p ? `${percent(p.done, p.total)}%` : t("models.starting")}{" "}
 									<button
 										type="button"
 										onClick={() => void invoke("cancel_model_download", { id: m.id })}
 									>
-										Cancel
+										{t("action.cancel")}
 									</button>
 								</span>
 							) : (
@@ -196,14 +187,14 @@ export function SecurityPanel() {
 										disabled={airGap !== false}
 										onClick={() => void download(m.id, false)}
 									>
-										Download
+										{t("models.download")}
 									</button>
-									{airGap !== false && " Air-Gap is on, so downloads are off. Import the files instead."}
+									{airGap !== false && ` ${t("models.airGapOnNote")}`}
 								</span>
 							)}
 							{!m.installed && (
 								<details>
-									<summary>Files for a manual import</summary>
+									<summary>{t("models.manualFiles")}</summary>
 									<FileList model={m} />
 								</details>
 							)}
@@ -212,7 +203,7 @@ export function SecurityPanel() {
 				})}
 			</ul>
 			<button type="button" onClick={() => void importFile()}>
-				Import a model file…
+				{t("models.importModelFile")}
 			</button>
 			{notice && <p role="status">{notice}</p>}
 			{error && <p role="alert">{error}</p>}

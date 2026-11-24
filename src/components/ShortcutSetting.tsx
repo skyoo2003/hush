@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import { type KeyboardEvent, useEffect, useState } from "react";
+import { t } from "../i18n";
 import type { AppError } from "../ipc/AppError";
 import type { Settings } from "../ipc/Settings";
 import { formatShortcut, shortcutFromKey } from "../shortcut";
 
 function errorText(e: unknown, shortcut: string): string {
+  const keys = formatShortcut(shortcut);
   switch ((e as Partial<AppError>)?.code) {
     case "shortcut_unavailable":
-      return `${formatShortcut(shortcut)} is in use by another app. Try another one.`;
+      return t("shortcut.inUse", { keys });
     case "shortcut_invalid":
-      return `${formatShortcut(shortcut)} cannot be used as a shortcut. Try another one.`;
+      return t("shortcut.invalid", { keys });
     default:
-      return "Could not save the shortcut. It is unchanged.";
+      return t("shortcut.saveFailed");
   }
 }
 
@@ -25,7 +27,7 @@ export function ShortcutSetting() {
     // Refetch on focus: the main window loads once and is shown and hidden after that.
     const refresh = () =>
       invoke<Settings>("get_settings").then(setSettings, () =>
-        setError("Could not read the shortcut setting."),
+        setError(t("shortcut.readFailed")),
       );
     void refresh();
     window.addEventListener("focus", refresh);
@@ -55,23 +57,24 @@ export function ShortcutSetting() {
 
   return (
     <section>
-      <h2>Quick search shortcut</h2>
+      <h2>{t("shortcut.heading")}</h2>
       {settings && !settings.shortcutRegistered && (
         <p role="alert">
-          {formatShortcut(settings.shortcut)} is in use by another app, so quick
-          search has no shortcut. Choose another one below.
+          {t("shortcut.unregistered", {
+            keys: formatShortcut(settings.shortcut),
+          })}
         </p>
       )}
       <button
         type="button"
-        aria-label="Quick search shortcut. Press to record a new one."
+        aria-label={t("shortcut.buttonLabel")}
         disabled={!settings}
         onClick={() => setRecording(true)}
         onKeyDown={onKeyDown}
         onBlur={() => setRecording(false)}
       >
         {recording
-          ? "Press the new shortcut, or Esc to cancel"
+          ? t("shortcut.recording")
           : settings
             ? formatShortcut(settings.shortcut)
             : "…"}

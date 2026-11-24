@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { APP_NAME } from "./brand";
+import { t } from "./i18n";
 import type { AppError } from "./ipc/AppError";
 import type { ImportedFile } from "./ipc/ImportedFile";
 import type { ModelInfo } from "./ipc/ModelInfo";
@@ -31,25 +32,31 @@ export function missingEmbedding(models: ModelInfo[]): ModelInfo | null {
 export function modelErrorText(e: unknown): string {
 	switch ((e as Partial<AppError>)?.code) {
 		case "air_gap_enabled":
-			return "Air-Gap mode is on, so nothing may be downloaded. Turn it off, or import the file instead.";
+			return t("models.error.airGapEnabled");
 		case "hash_mismatch":
-			return "The file does not match the expected SHA-256 checksum, so it was not installed. Download it again.";
+			return t("models.error.hashMismatch");
 		case "not_in_catalog":
-			return `That file is not one of the models ${APP_NAME} knows.`;
+			return t("models.error.notInCatalog", { app: APP_NAME });
 		case "download_cancelled":
-			return "Download cancelled. Downloading again continues where it stopped.";
+			return t("models.error.downloadCancelled");
 		case "download_failed":
-			return "The download failed. Downloading again continues where it stopped.";
+			return t("models.error.downloadFailed");
 		default:
-			return "Something went wrong. Try again.";
+			return t("error.generic");
 	}
 }
 
 export function importText(r: ImportedFile, models: ModelInfo[]): string {
-	if (r.modelInstalled) return `${r.id} is installed.`;
+	if (r.modelInstalled) return t("models.installed", { id: r.id });
 	const left = models
 		.find((m) => m.id === r.id)
 		?.files.filter((f) => !f.installed && f.name !== r.name)
 		.map((f) => f.name);
-	return `Imported ${r.name} for ${r.id}.${left?.length ? ` Still needed: ${left.join(", ")}.` : ""}`;
+	return left?.length
+		? t("models.importedNeeds", {
+				name: r.name,
+				id: r.id,
+				left: left.join(", "),
+			})
+		: t("models.imported", { name: r.name, id: r.id });
 }
