@@ -650,3 +650,20 @@ Run-to-run spread was below 1% for every number (stddev at most 2 t/s on pp, 0.3
 ### New crates
 
 None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate`, `NSEnumerator`, `NSProcessInfo`) and `objc2-core-graphics` (`CGEventSource`, `CGEventTypes`). IOKit's three power-source functions are declared in `ingest/scheduler/macos.rs`. No network use.
+
+## ADR-020. Sponsor links, the QR code, and the supporter flag
+
+- Date: 2026-11-25
+- Status: Accepted
+
+### Decision
+
+- `sponsor::link(channel, air_gap, browser)` is the one place that opens a sponsor link. With Air-Gap off it hands the URL to the external browser (`/usr/bin/open`). With Air-Gap on it opens nothing and returns a QR code of the URL, generated in process as SVG. The IPC command `open_sponsor` and the tray's Sponsor menu both call it; the tray sends the QR to the main window on `sponsor://qr`. The app makes no request for sponsorship in either case.
+- `brand::SPONSOR_URLS` holds exactly the two channels of `.github/FUNDING.yml` (GitHub Sponsors, then Buy Me a Coffee). build.rs fails the build if they differ.
+- The funding goal shown in Settings > Sponsor is the `**Current goal:**` line of `docs/funding.md`, copied by build.rs into the generated `src/funding.ts`. The app never fetches it.
+- The milestone banner shows when `counters.search_count` or the indexed document count reaches 100 and stays until dismissed. Dismissing it, or turning on "I sponsored", sets `sponsor_banner_dismissed`, so it never shows again and the banner never reads the supporter flag.
+- `settings.supporter` is self-reported and never verified. Outside tests, only `commands.rs` (store and return), `src/ipc/Settings.ts` (generated type), and `SponsorPanel.tsx` (the switch and badge) name it; `scripts/check-supporter.sh` enforces this in CI. The OLED dark and Terminal themes are selectable by everyone.
+
+### New crates
+
+- `qrcode` 0.15 (MIT OR Apache-2.0), with `default-features = false, features = ["svg"]`, so it pulls in no dependencies (the default `image` feature is off). It encodes a string into an SVG QR code in memory. No network use, no file access.

@@ -45,6 +45,7 @@ ignore = "0.4"
 tokio-util = { version = "0.7", default-features = false }
 notify-debouncer-full = "0.8"
 tauri-plugin-dialog = "2"
+qrcode = { version = "0.15", default-features = false, features = ["svg"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

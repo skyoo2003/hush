@@ -3,7 +3,6 @@
 //! Dock policy (Accessory, Regular only while the main window is open). No API here
 //! needs the Accessibility permission.
 
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -15,6 +14,8 @@ use tauri_plugin_global_shortcut::{GlobalShortcut, GlobalShortcutExt, Shortcut, 
 use crate::brand;
 use crate::ingest::queue::IndexProgress;
 use crate::ingest::scheduler::{Current, Mode, Reason, SchedState, Scheduler};
+use crate::net;
+use crate::sponsor::{self, SponsorLink};
 use crate::storage::db::Db;
 use crate::storage::error::StorageError;
 
@@ -238,16 +239,10 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let schedule = item("schedule", &schedule_label(None), false)?;
     let pause = item("pause", "Pause Indexing", false)?;
     let air_gap = item("air_gap", "Air-Gap: On", false)?;
-    let sponsors = brand::SPONSOR_URLS
+    let sponsors = sponsor::CHANNEL_NAMES
         .iter()
         .enumerate()
-        .map(|(i, url)| {
-            item(
-                &format!("sponsor:{i}"),
-                url.trim_start_matches("https://"),
-                true,
-            )
-        })
+        .map(|(i, name)| item(&format!("sponsor:{i}"), name, true))
         .collect::<tauri::Result<Vec<_>>>()?;
     let sponsor_refs: Vec<&dyn tauri::menu::IsMenuItem<R>> =
         sponsors.iter().map(|s| s as _).collect();
@@ -308,13 +303,19 @@ fn on_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
             }
         }
         _ => {
-            let url = id
-                .strip_prefix("sponsor:")
-                .and_then(|i| i.parse::<usize>().ok())
-                .and_then(|i| brand::SPONSOR_URLS.get(i));
-            if let Some(url) = url {
-                // The browser makes the request; the app sends nothing.
-                std::thread::spawn(move || Command::new("/usr/bin/open").arg(url).status());
+            let channel = id.strip_prefix("sponsor:").and_then(|i| i.parse().ok());
+            let Some(channel) = channel else {
+                return;
+            };
+            // Read the guard on every click: a missing client counts as Air-Gap on.
+            let air_gap = app
+                .try_state::<net::Client>()
+                .is_none_or(|n| n.guard().is_enabled());
+            if let Some(qr @ SponsorLink::Qr { .. }) =
+                sponsor::link(channel, air_gap, sponsor::open_in_browser)
+            {
+                show_main(app);
+                let _ = app.emit(sponsor::QR_EVENT, qr);
             }
         }
     }

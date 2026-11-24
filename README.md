@@ -32,11 +32,15 @@ There is no telemetry. Each starts at one fixed host (a model download may then 
 
 The code in this repository is all of the code in official builds. There are no private modules, so anyone can check the claim that nothing leaves the device.
 
-## Sponsor
+## Sponsors
 
 Locite is free. Every feature works the same for everyone, with no feature locks, usage limits, or upgrade prompts. The app contains no payment or license code.
 
-Maintenance is paid for by sponsors through [GitHub Sponsors](https://github.com/sponsors/skyoo2003) (monthly) and [Buy Me a Coffee](https://buymeacoffee.com/skyoo2003) (one-time). Sponsoring gets you no extra features. Thanks are symbolic: a place in the README thank-you list if you want it, an in-app badge and theme you turn on yourself, and votes on the roadmap. Funding goals, totals, and spending are published every quarter in [docs/funding.md](docs/funding.md).
+Maintenance is paid for by sponsors through [GitHub Sponsors](https://github.com/sponsors/skyoo2003) (monthly) and [Buy Me a Coffee](https://buymeacoffee.com/skyoo2003) (one-time). Sponsoring gets you no extra features. Thanks are symbolic: a place in the thank-you list below if you agree to it, an in-app thank-you badge you turn on yourself, and votes on the roadmap. The badge's OLED dark and Terminal themes are open to everyone. See [docs/funding.md](docs/funding.md) for the funding goals, the quarterly totals and spending, and how the thank-you list works.
+
+### Thank you
+
+No sponsors yet.
 
 ## Install
 

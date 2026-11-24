@@ -7,6 +7,7 @@ pub mod ingest;
 pub mod net;
 pub mod rag;
 pub mod security;
+pub mod sponsor;
 pub mod storage;
 
 use std::sync::Arc;
@@ -35,6 +36,10 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::get_settings,
         commands::set_air_gap,
         commands::set_shortcut,
+        commands::set_supporter,
+        commands::set_theme,
+        commands::dismiss_sponsor_banner,
+        commands::open_sponsor,
         commands::list_models,
         commands::download_model,
         commands::cancel_model_download,
@@ -301,6 +306,10 @@ mod tests {
             "set_exclude_patterns",
             "get_schedule",
             "set_schedule",
+            "set_supporter",
+            "set_theme",
+            "dismiss_sponsor_banner",
+            "open_sponsor",
         ] {
             assert_acl_denied(invoke(&quick, cmd));
         }
@@ -694,5 +703,98 @@ mod tests {
             assert_eq!(settings["shortcut"], desktop::DEFAULT_SHORTCUT);
             assert_eq!(settings["shortcutRegistered"], false);
         }
+    }
+
+    #[test]
+    fn sponsor_banner_shows_once_and_air_gap_on_gives_only_a_qr() {
+        let app = builder(mock_builder())
+            .build(tauri::generate_context!(test = true))
+            .unwrap();
+        let (_dir, db) = storage::db::tests::temp_db();
+        let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
+        app.manage(net::Client::new(guard).unwrap());
+        app.manage(Arc::new(db));
+        let main = window(&app, "main");
+        let call = |cmd: &str, args: serde_json::Value| {
+            invoke_with(&main, cmd, tauri::ipc::InvokeBody::Json(args))
+                .unwrap()
+                .deserialize::<serde_json::Value>()
+                .unwrap()
+        };
+        let banner = || call("get_settings", serde_json::json!({}))["sponsorBanner"].clone();
+        let db = app.state::<Arc<storage::db::Db>>();
+        let net = app.state::<net::Client>();
+
+        for _ in 0..99 {
+            db.increment_search_count().unwrap();
+        }
+        assert_eq!(banner(), false);
+        db.increment_search_count().unwrap();
+        assert_eq!(banner(), true);
+        assert_eq!(banner(), true, "stays until dismissed");
+        let after = call("dismiss_sponsor_banner", serde_json::json!({}));
+        assert_eq!(after["sponsorBanner"], false);
+        for _ in 0..200 {
+            db.increment_search_count().unwrap();
+        }
+        assert_eq!(banner(), false, "never shows again");
+
+        // Air-Gap is on by default: a QR comes back, and no request is made.
+        assert!(net.guard().is_enabled());
+        for channel in 0..brand::SPONSOR_URLS.len() {
+            let link = call("open_sponsor", serde_json::json!({ "channel": channel }));
+            assert_eq!(link["kind"], "qr", "got {link}");
+            assert_eq!(link["url"], brand::SPONSOR_URLS[channel]);
+        }
+        assert_eq!(net.call_count(), 0);
+
+        // Themes are open without the supporter flag; the flag only adds the badge.
+        let s = call("set_theme", serde_json::json!({ "theme": "terminal" }));
+        assert_eq!(
+            (s["theme"].as_str(), s["supporter"].as_bool()),
+            (Some("terminal"), Some(false))
+        );
+        let s = call("set_supporter", serde_json::json!({ "on": true }));
+        assert_eq!(s["supporter"], true);
+        let s = call("set_supporter", serde_json::json!({ "on": false }));
+        assert_eq!(
+            (s["supporter"].as_bool(), s["theme"].as_str()),
+            (Some(false), Some("terminal"))
+        );
+    }
+
+    #[test]
+    fn turning_supporter_on_hides_the_document_milestone_banner() {
+        let app = builder(mock_builder())
+            .build(tauri::generate_context!(test = true))
+            .unwrap();
+        let (_dir, db) = storage::db::tests::temp_db();
+        let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
+        app.manage(net::Client::new(guard).unwrap());
+        app.manage(Arc::new(db));
+        let main = window(&app, "main");
+        let banner = |cmd: &str, args: serde_json::Value| {
+            invoke_with(&main, cmd, tauri::ipc::InvokeBody::Json(args))
+                .unwrap()
+                .deserialize::<serde_json::Value>()
+                .unwrap()["sponsorBanner"]
+                .clone()
+        };
+        sql(
+            &app,
+            "INSERT INTO folders(id, path, added_at, status) VALUES (1, '/f', 0, 'ready')",
+        );
+        for i in 0..100 {
+            sql(&app, &format!("INSERT INTO documents(folder_id, rel_path, ext, status) VALUES (1, 'd{i}', 'txt', 'indexed')"));
+        }
+        assert_eq!(banner("get_settings", serde_json::json!({})), true);
+        assert_eq!(
+            banner("set_supporter", serde_json::json!({ "on": true })),
+            false
+        );
+        assert_eq!(
+            banner("set_supporter", serde_json::json!({ "on": false })),
+            false
+        );
     }
 }

@@ -30,6 +30,7 @@ jobs:
       # Pinned, SHA-256-checked PDFium. tauri-build copies it for the bundle, and the PDF tests load it.
       - run: bash scripts/fetch-pdfium.sh
       - run: bash scripts/check-brand.sh
+      - run: bash scripts/check-supporter.sh
       - run: bash scripts/check-spdx.sh
       - run: node scripts/check-npm-licenses.mjs
       # Networking APIs only in src-tauri/src/net; rewrites docs/network-deps.md for the drift check.
@@ -48,7 +49,7 @@ jobs:
         working-directory: src-tauri
       # cargo test regenerates src/ipc/ through ts-rs.
       - name: Generated file drift check
-        run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json src/ipc docs/network-deps.md
+        run: git diff --exit-code src/brand.ts src/funding.ts src-tauri/tauri.conf.json src/ipc docs/network-deps.md
 
   deny:
     # cargo-deny-action runs in Docker, which macOS runners lack. It reads metadata only, so Linux is fine.

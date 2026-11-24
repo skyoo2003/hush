@@ -137,6 +137,18 @@ impl Db {
         })?;
         Ok(())
     }
+
+    /// `(counters.search_count, indexed documents)`, the two sponsor milestone numbers.
+    pub fn milestone_counts(&self) -> Result<(i64, i64), StorageError> {
+        self.read(|c| {
+            c.query_row(
+                "SELECT coalesce((SELECT value FROM counters WHERE key = 'search_count'), 0),
+                        (SELECT count(*) FROM documents WHERE status = 'indexed')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })
+    }
 }
 
 fn lock(m: &Mutex<Connection>) -> MutexGuard<'_, Connection> {

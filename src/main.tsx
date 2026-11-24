@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { APP_NAME } from "./brand";
+import "./theme.css";
 
 document.title = APP_NAME;
 
