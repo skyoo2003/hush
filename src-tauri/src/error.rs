@@ -27,6 +27,10 @@ pub enum ErrorCode {
     SourceNotFound,
     /// The citation could not be put on the clipboard.
     ClipboardFailed,
+    /// The quick-search shortcut could not be parsed.
+    ShortcutInvalid,
+    /// Another app holds the quick-search shortcut.
+    ShortcutUnavailable,
 }
 
 impl AppError {

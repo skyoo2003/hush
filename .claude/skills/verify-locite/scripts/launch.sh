@@ -27,8 +27,8 @@ echo $! > "$dir/pid"
 for _ in $(seq 1 240); do
   new=$(tail -n +"$(( $(cat "$dir/log-start") + 1 ))" "$LOG")
   if grep -q "storage open failed" <<<"$new"; then die "storage open failed (see $LOG); run cleanup.sh"; fi
-  # "app started" is logged before storage opens; the rendered heading only answers AX once setup returned.
-  if grep -q "app started" <<<"$new" && ax_until "$dir/launch-ax.txt" "AXHeading title=$(brand APP_NAME)" 1; then
+  # "app ready" is logged when setup returns. The main window may stay hidden (folders exist, shortcut free).
+  if grep -q "app ready" <<<"$new"; then
     echo "$dir"; exit 0
   fi
   alive || die "app exited during startup; see $dir/stdout.txt"

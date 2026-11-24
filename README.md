@@ -49,7 +49,7 @@ Work follows a 12-week plan to v1.0 in [docs/roadmap.md](docs/roadmap.md), and [
 - Index PDFs and other documents from folders you choose, and keep the index up to date as files change.
 - Hybrid search that combines vector similarity, keyword search, and a reranker.
 - Source-grounded Q&A and summaries from a local LLM.
-- A quick-search window on a global shortcut (`Cmd+Shift+Space`).
+- A quick-search window on a global shortcut (`Cmd+Shift+Space`, changeable in settings) and a menu bar icon; no Dock icon unless the main window is open.
 - `.locitepack` files for packaging an index.
 
 ## Building from source

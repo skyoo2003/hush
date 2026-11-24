@@ -11,7 +11,7 @@ This directory is the maintained source for verifying Locite's user-facing behav
 
 ## Driving conventions
 
-- Prefer AX roles and accessible names (`AXSearchField desc=Search`, `AXHeading title=Locite`, `AXSwitch title=Air-Gap mode`) over coordinates. Identify windows by the `windows.swift` label, never by title (both are `Locite`).
+- Prefer AX roles and accessible names (`AXComboBox desc=Search`, `AXHeading title=Locite`, `AXSwitch title=Air-Gap mode`) over coordinates. Identify windows by the `windows.swift` label, never by title (both are `Locite`).
 - Confirm that the frontmost pid is ours before every keystroke.
 - Leave the app as you found it: popup hidden, no setting changed. Undo any mutation and prove that the undo worked too.
 

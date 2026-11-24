@@ -29,6 +29,14 @@ export function QuickSearchModal() {
   const [error, setError] = useState<string | null>(null);
   // Only the newest request may set results; slower older ones are dropped.
   const seq = useRef(0);
+  const input = useRef<HTMLInputElement>(null);
+
+  // The window is created once and shown on each shortcut; select the last query so typing replaces it.
+  useEffect(() => {
+    const onFocus = () => input.current?.select();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   useEffect(() => {
     const mine = ++seq.current;
@@ -98,6 +106,7 @@ export function QuickSearchModal() {
   return (
     <main className="quick-search">
       <input
+        ref={input}
         type="search"
         role="combobox"
         aria-expanded={!!hits?.length}

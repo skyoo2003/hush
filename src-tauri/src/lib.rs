@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pub mod brand;
 pub mod commands;
+pub mod desktop;
 pub mod error;
 pub mod ingest;
 pub mod net;
@@ -10,12 +11,9 @@ pub mod storage;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, Manager, Runtime};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::EnvFilter;
-
-const QUICK_SEARCH_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 
 /// Shared by `run()` and the tests so both see the same handlers and setup.
 fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
@@ -30,11 +28,13 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::get_index_status,
         commands::get_settings,
         commands::set_air_gap,
+        commands::set_shortcut,
         commands::list_models,
         commands::export_pack,
     ])
     // No window is granted a dialog permission: only `add_watched_folder` opens the picker.
     .plugin(tauri_plugin_dialog::init())
+    .on_window_event(desktop::on_window_event)
     .setup(|app| {
         init_tracing(&app.path().app_log_dir()?)?;
         let labels: Vec<String> = app.webview_windows().into_keys().collect();
@@ -43,10 +43,12 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
             .inspect_err(|e| tracing::error!(error = %e, "storage open failed"))?;
         let db = Arc::new(db);
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db)?);
+        let air_gap = guard.is_enabled();
         app.manage(net::Client::new(guard)?);
         app.manage(db.clone());
+        desktop::setup(app.handle(), &db, air_gap)?;
         load_model(app.handle(), app.path().app_data_dir()?.join("models"), db);
-        register_quick_search_shortcut(app.handle())?;
+        tracing::info!("app ready");
         Ok(())
     })
 }
@@ -102,6 +104,7 @@ fn start_indexing<R: Runtime>(
         QueueConfig::default(),
         tokio_util::sync::CancellationToken::new(),
         move |p| {
+            desktop::set_tray_index(&emitter, Some(p));
             let _ = emitter.emit(PROGRESS_EVENT, p);
         },
     ) {
@@ -112,6 +115,12 @@ fn start_indexing<R: Runtime>(
         }
     };
     let queue = Arc::new(queue);
+    // shortcut: one parse worker while the user searches; ingest/scheduler.rs (week 6) takes this over.
+    let q = queue.clone();
+    app.listen_any(desktop::FOCUS_EVENT, move |e| {
+        let searching = e.payload() == "true";
+        q.set_concurrency(if searching { 1 } else { q.budget().max() });
+    });
     match ingest::watcher::FolderWatcher::start(db, queue.clone()) {
         Ok(w) => {
             app.manage(w);
@@ -121,38 +130,8 @@ fn start_indexing<R: Runtime>(
     }
     // Windows that asked get_index_status before this point still show "not indexing".
     let _ = app.emit(PROGRESS_EVENT, queue.progress());
+    desktop::set_tray_index(app, Some(queue.progress()));
     app.manage(queue);
-}
-
-fn register_quick_search_shortcut<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    app.plugin(
-        tauri_plugin_global_shortcut::Builder::new()
-            .with_handler(|app, _, event| {
-                if event.state() == ShortcutState::Pressed {
-                    toggle_quick_search(app);
-                }
-            })
-            .build(),
-    )?;
-    // Another app may own the shortcut. Search still works from the main window, so do not fail startup.
-    if let Err(e) = app.global_shortcut().register(QUICK_SEARCH_SHORTCUT) {
-        tracing::warn!(error = %e, "quick-search shortcut not registered");
-    }
-    Ok(())
-}
-
-fn toggle_quick_search<R: Runtime>(app: &AppHandle<R>) {
-    let Some(w) = app.get_webview_window("quick-search") else {
-        return;
-    };
-    let res = if w.is_visible().unwrap_or(false) {
-        w.hide()
-    } else {
-        w.show().and_then(|()| w.set_focus())
-    };
-    if let Err(e) = res {
-        tracing::warn!(error = %e, "quick-search toggle failed");
-    }
 }
 
 fn open_storage(dir: &std::path::Path) -> Result<storage::db::Db, storage::error::StorageError> {
@@ -181,14 +160,18 @@ fn init_tracing(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
 }
 
 pub fn run() {
-    if builder(tauri::Builder::default())
-        .run(tauri::generate_context!())
-        .is_err()
-    {
+    let Ok(app) = builder(tauri::Builder::default()).build(tauri::generate_context!()) else {
         // No error details: they can carry paths.
         eprintln!("startup failed");
         std::process::exit(1);
-    }
+    };
+    app.run(|_app, _event| {
+        // With no Dock icon, opening the app again from Finder or Spotlight shows the main window.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = _event {
+            desktop::show_main(_app);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -263,6 +246,7 @@ mod tests {
         assert_acl_denied(invoke_with(&main, "search", query()));
         for cmd in [
             "set_air_gap",
+            "set_shortcut",
             "list_folders",
             "add_watched_folder",
             "remove_watched_folder",
@@ -350,10 +334,11 @@ mod tests {
             let reloaded = security::airgap::AirGapGuard::load(&db).unwrap();
             assert_eq!(reloaded.is_enabled(), on);
             let settings = invoke(&main, "get_settings").unwrap();
-            assert_eq!(
-                settings.deserialize::<serde_json::Value>().unwrap()["airGap"],
-                on
-            );
+            let settings = settings.deserialize::<serde_json::Value>().unwrap();
+            assert_eq!(settings["airGap"], on);
+            // No plugin in the mock app, so nothing is registered.
+            assert_eq!(settings["shortcut"], desktop::DEFAULT_SHORTCUT);
+            assert_eq!(settings["shortcutRegistered"], false);
         }
     }
 }

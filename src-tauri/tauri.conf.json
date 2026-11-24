@@ -17,20 +17,20 @@
         "url": "index.html",
         "width": 960,
         "height": 680,
-        "visible": true
+        "visible": false
       },
       {
         "label": "quick-search",
         "title": "Locite",
         "url": "index.html",
         "width": 680,
-        "height": 420,
+        "height": 460,
         "decorations": false,
         "visible": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "center": true
+        "visibleOnAllWorkspaces": true
       }
     ],
     "security": {

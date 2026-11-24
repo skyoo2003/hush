@@ -9,7 +9,8 @@ alive || die "no live instance; run launch.sh"
 P=$(pid); OUT="$RUN/quick-search.txt"; : > "$OUT"
 PROBE=20261122  # digits only: words trigger the macOS autocorrect bubble, which eats the first Escape
 state() { swift "$SCRIPTS/windows.swift" "$P" | awk '$1=="quick-search" {print $2}'; }
-front() { osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true'; }
+# lsappinfo, not System Events: System Events never reports an Accessory (UIElement) app as frontmost.
+front() { lsappinfo info -only pid "$(lsappinfo front)" | cut -d= -f2; }
 log() { echo "$*" | tee -a "$OUT"; }
 fail() { log "FAIL: $*"; exit 1; }
 
@@ -38,7 +39,7 @@ log "step 4: reopen, field must be empty"
 osascript -e 'tell application "System Events" to key code 49 using {command down, shift down}'
 sleep 1
 [ "$(state)" = 1 ] || fail "popup did not reopen"
-ax_until "$RUN/quick-search-reopen-ax.txt" "AXSearchField" || fail "search field not found after reopen"
+ax_until "$RUN/quick-search-reopen-ax.txt" "AXComboBox title=Search" || fail "search field not found after reopen"
 grep -q "value=$PROBE" "$RUN/quick-search-reopen-ax.txt" && fail "probe still in the field after Escape"
 "$SCRIPTS/shot.sh" quick-search quick-search-reopened >/dev/null
 

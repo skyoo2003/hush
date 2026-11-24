@@ -8,10 +8,11 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use tauri_plugin_dialog::DialogExt;
 
+use crate::desktop::{self, ShortcutError};
 use crate::error::{AppError, ErrorCode};
 use crate::ingest::error::WatchError;
 use crate::ingest::queue::{IndexProgress, IndexQueue};
@@ -35,6 +36,8 @@ pub async fn search<R: Runtime>(
     limit: Option<u32>,
 ) -> Result<SearchResults, AppError> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
+    // Each search means the user is typing; the indexer yields while they do.
+    let _ = app.emit(desktop::FOCUS_EVENT, true);
     tauri::async_runtime::spawn_blocking(move || {
         let service = app
             .try_state::<SearchService>()
@@ -131,11 +134,10 @@ fn source_not_found() -> AppError {
     }
 }
 
+/// Hides the quick-search window, whichever window calls it (the ACL allows only that one).
 #[tauri::command]
-pub fn hide_window<R: Runtime>(window: WebviewWindow<R>) -> Result<(), AppError> {
-    window
-        .hide()
-        .map_err(|_| AppError::internal("failed to hide window"))
+pub fn hide_window<R: Runtime>(app: AppHandle<R>) {
+    desktop::hide_quick_search(&app);
 }
 
 // Main window set.
@@ -225,24 +227,60 @@ fn folder_error(e: WatchError) -> AppError {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub air_gap: bool,
+    /// Quick-search shortcut in global-hotkey syntax, such as `alt+Space`.
+    pub shortcut: String,
+    /// False when another app holds the shortcut, so it does nothing.
+    pub shortcut_registered: bool,
 }
 
 #[tauri::command]
-pub fn get_settings(net: State<'_, net::Client>) -> Settings {
+pub fn get_settings<R: Runtime>(
+    app: AppHandle<R>,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Settings {
+    let shortcut = desktop::saved_shortcut(&db);
     Settings {
         air_gap: net.guard().is_enabled(),
+        shortcut_registered: desktop::is_registered(&app, &shortcut),
+        shortcut,
     }
 }
 
 #[tauri::command]
-pub fn set_air_gap(
+pub fn set_air_gap<R: Runtime>(
+    app: AppHandle<R>,
     enabled: bool,
     db: State<'_, Arc<Db>>,
     net: State<'_, net::Client>,
 ) -> Result<(), AppError> {
     net.guard()
         .set_enabled(&db, enabled)
-        .map_err(|_| AppError::internal("failed to save setting"))
+        .map_err(|_| AppError::internal("failed to save setting"))?;
+    desktop::set_tray_air_gap(&app, enabled);
+    Ok(())
+}
+
+/// Replaces the quick-search shortcut. On failure the old one stays active and saved.
+#[tauri::command]
+pub fn set_shortcut<R: Runtime>(
+    app: AppHandle<R>,
+    shortcut: String,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Result<Settings, AppError> {
+    desktop::set_shortcut(&app, &db, &shortcut).map_err(|e| match e {
+        ShortcutError::Invalid => AppError {
+            code: ErrorCode::ShortcutInvalid,
+            message: e.to_string(),
+        },
+        ShortcutError::Unavailable => AppError {
+            code: ErrorCode::ShortcutUnavailable,
+            message: e.to_string(),
+        },
+        ShortcutError::Storage(_) => AppError::internal("failed to save setting"),
+    })?;
+    Ok(get_settings(app, db, net))
 }
 
 #[tauri::command]
