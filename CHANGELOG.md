@@ -7,7 +7,8 @@ All notable changes to Locite are recorded here. The format follows [Keep a Chan
 ### Added
 
 - Encrypted storage: one SQLCipher database with FTS5 and sqlite-vec, keyed from the macOS Keychain.
-- Air-Gap guard: all HTTP goes through one client, limited to model download and update check, each starting at one host.
+- Air-Gap guard: all HTTP goes through one client, limited to model download and update check, each starting at one host (`huggingface.co`, `github.com`) and redirected only to that service's download host.
+- Signed manual updates (Security panel): "Check for updates" reads the latest GitHub release's `latest.json`, and an update installs only if its minisign signature matches the app's key and the version it was signed for. Nothing checks on its own.
 - Scoped file access: reads only inside registered folders, with `..` and symlink escapes rejected.
 - Document ingestion: PDF and image parsing, OCR through macOS Vision, chunking, and SHA-256 change detection.
 - Local embeddings (bge-small-en-v1.5 by default) and hybrid search (vector + keyword, fused by RRF).

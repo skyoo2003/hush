@@ -18,7 +18,7 @@ description: Model-check Locite's Air-Gap promise (no request leaves while Air-G
 
 ## Does my change touch this?
 
-Covered code, last confirmed against the model at commit **`0b9218f`**:
+Covered code, last confirmed against the model at commit **`16cba8a`**:
 
 | Model action | Code |
 | --- | --- |
@@ -26,7 +26,7 @@ Covered code, last confirmed against the model at commit **`0b9218f`**:
 | `ToggleDrain` | `AirGapGuard::set_enabled` with `on = true`: waits on `drained` until `in_flight` is 0, then returns |
 | `ToggleWrite` is one atomic step | `src-tauri/src/storage/db.rs` `Db::set_setting`: one upsert under the `writer` Mutex |
 | `RequestCheck` | `src-tauri/src/net.rs` `Client::get`: `self.guard.begin(purpose, host, hop)?`, which counts the request in `in_flight`, then calls `check`. Each redirect hop is another `RequestCheck`, after the previous hop's `InFlight` is dropped. |
-| `RequestSend` | `Client::get`: the `send()` branch of the `tokio::select!` completes; the returned `Body` keeps the `InFlight` |
+| `RequestSend` | `Client::get`: the `send()` branch of the `tokio::select!` completes; the returned `Body` keeps the `InFlight`. Callers: `rag/models.rs` (model files) and `update.rs` `fetch` (update manifest and archive), both reading through `Body::chunk` |
 | `BodyDone` | `Body::chunk` returns None, or the caller drops the `Body` |
 | `RequestCancel` | `Client::get` or `Body::chunk`: the `turned_on()` branch of the `tokio::select!` wins, and the `InFlight` drop decrements `in_flight` |
 | `Restart`, `Init` | `src-tauri/src/lib.rs` `builder` setup: `AirGapGuard::load(&db)`, which is ON unless the row is `"0"` (`Db::setting`) |
@@ -35,7 +35,7 @@ Covered code, last confirmed against the model at commit **`0b9218f`**:
 To see whether a change touches covered code:
 
 ```sh
-git diff 0b9218f -- src-tauri/src/security/airgap.rs src-tauri/src/net.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/storage/db.rs
+git diff 16cba8a -- src-tauri/src/security/airgap.rs src-tauri/src/net.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/storage/db.rs
 ```
 
 Look for these changes in the diff: a new caller of `set_enabled`, `begin`, or `Client::get`, a change to the order inside any of them, a request path that skips the `turned_on` race, a new cache of the mode, or a new way to read the setting at startup. A change elsewhere in those files, such as a new table in `db.rs`, does not need a model change.
@@ -79,9 +79,9 @@ When a row reads `UNEXPECTED`:
 
 ## Not covered
 
-- Host and scheme checks, and the purpose→host table. Unit tests cover them (`check_matrix` and `blocked_requests_never_reach_reqwest`).
+- Host and scheme checks, and the purpose→host table. Unit tests cover them (`check_matrix`, `each_purpose_redirects_only_to_its_own_cdn_host`, and `blocked_requests_never_reach_reqwest`).
 - Whether content, queries, or paths ever reach a request body (absolute rule 1).
-- Network calls that bypass `net::Client`.
+- Network calls that bypass `net::Client`, including tauri-plugin-updater's own client. `scripts/check-net-usage.sh` covers them textually.
 - A failed `AirGapGuard::load` at startup. Setup aborts, so no requests happen.
 - SQLite durability itself: a committed write is assumed to survive a crash.
 - Bounds beyond 3 toggles, 2 requests, and 2 relaunches. A redirect chain counts one request per hop.

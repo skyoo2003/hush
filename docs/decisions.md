@@ -190,7 +190,7 @@ The original ID `com.hush.app` ended with `.app`, which Tauri warns conflicts wi
 | Purpose | Host |
 | --- | --- |
 | ModelDownload | `huggingface.co` |
-| UpdateCheck | Host of `brand::SITE_URL` |
+| UpdateCheck | Host of `brand::SITE_URL` (ADR-022: `github.com`, the host of `brand::UPDATE_MANIFEST_URL`) |
 
 ### New crates
 
@@ -574,7 +574,7 @@ Users need the embedding model on their machine. It is too large for the app bun
 ### Decision
 
 - **Catalog.** `models/catalog.json` is built into the binary (`include_str!`). Each model has `id`, `kind` (`embedding`, `reranker`, `llm`), `license`, `redistributable`, and `files` of `{ name, url, size, sha256 }`. A list of files replaces the single `url`/`size`/`sha256` the task named, because the embedder needs three files per model. The catalog replaces `models/*/manifest.json` as the only place hashes are stored. `BertEmbedder::load` and `scripts/fetch-models.sh` read it. There is no remote catalog. URLs pin a repo commit.
-- **Redirects.** `Client::get` follows up to 3 redirects itself. Every hop passes `AirGapGuard::begin` with a `Hop`. A first hop must reach `NetPurpose::host()` exactly. A ModelDownload redirect hop may also reach a host ending in `.hf.co`. UpdateCheck gets no extra host. Each file's sha256 is pinned, so a CDN host can withhold a file but cannot change it. A suffix was chosen over an exact host list, because a regional host list would break whenever HF adds a region.
+- **Redirects.** `Client::get` follows up to 3 redirects itself. Every hop passes `AirGapGuard::begin` with a `Hop`. A first hop must reach `NetPurpose::host()` exactly. A ModelDownload redirect hop may also reach a host ending in `.hf.co`. UpdateCheck gets no extra host (amended by ADR-022). Each file's sha256 is pinned, so a CDN host can withhold a file but cannot change it. A suffix was chosen over an exact host list, because a regional host list would break whenever HF adds a region.
 - **Body in flight.** `get` returns a `Body` that holds the request's `InFlight` until the body is read or dropped. `Body::chunk` races `turned_on`. Turning Air-Gap ON now stops a download mid-file, and `set_enabled(true)` returns only after the body is dropped. The TLA+ model gains `BodyDone` and the `NoBodyAfterOnAck` invariant.
 - **Install.** `ModelManager` writes `{name}.part`, hashes as it goes (the kept prefix is re-hashed on resume), checks the size and sha256, `sync_all`s, and renames into `app_data_dir/models/{id}/{name}`. A file at its final name is therefore verified, and `is_installed` checks names and sizes only. A wrong hash deletes the part. A dropped connection or a cancel keeps it, and the next download sends `Range: bytes=N-`. A `200` reply to a Range request restarts the file. A `206` whose `Content-Range` does not start at N is an error.
 - **Import.** For an offline machine, the user picks a file in the native picker, which opens from Rust, so no path comes from the webview. The file is read through `ScopedPath` with its own folder as the scope, so a picked symlink cannot pull a file from elsewhere. That is the exception to rule 3's "registered folders", needed because model files live outside them. A file whose size matches no catalog file is rejected before it is read. Otherwise it is copied to `models/.import-N.part` while hashed, and renamed to the catalog file with that hash. The bytes are never parsed before the hash matches.
@@ -694,3 +694,40 @@ None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate
 | --- | --- | --- | --- |
 | `cargo-about` 0.9.3 | Rust crate license texts for `THIRD_PARTY_NOTICES.txt` (`src-tauri/about.toml`, `about.hbs`) | MIT OR Apache-2.0 | None: run with `--frozen` (offline, locked), reading license files from the local cargo registry only, never ClearlyDefined. Installed with `cargo install --locked` from crates.io. |
 | `cargo-cyclonedx` 0.5.10 | CycloneDX 1.5 JSON SBOM of the aarch64-apple-darwin crate graph | Apache-2.0 | None: reads local `cargo metadata`. Installed with `cargo install --locked` from crates.io. |
+
+## ADR-022. Signed updates through net::Client
+
+- Date: 2026-11-25
+- Status: Accepted by the lead maintainer (changes absolute rule 2; needs the GOVERNANCE.md issue and comment period before merge)
+- Amends: ADR-003 (UpdateCheck host), ADR-017 (UpdateCheck gets no redirect host)
+- Number: ADR-021 is taken by the release pipeline on a parallel branch.
+
+### Context
+
+Users need a way to get new versions, and the release workflow publishes to GitHub Releases. The UpdateCheck host was the project site (`skyoo2003.github.io`), which serves no release files. tauri-plugin-updater can check, verify, and install updates, but `Updater::check`, `Update::download`, and `download_and_install` use the plugin's own `reqwest` client, which would bypass `net::Client` and the guard (rule 2). Measured: `github.com/<o>/<r>/releases/latest/download/X` answers `302` to `github.com/<o>/<r>/releases/download/<tag>/X`, which answers `302` to `release-assets.githubusercontent.com`.
+
+### Decision
+
+- **Hosts.** UpdateCheck starts at `github.com`, the host of `brand::UPDATE_MANIFEST_URL` (`https://github.com/skyoo2003/locite/releases/latest/download/latest.json`). A redirect hop may also reach exactly `release-assets.githubusercontent.com` (`RELEASE_ASSET_HOST` in `security/airgap.rs`); a first hop there is refused. ModelDownload cannot reach it, and UpdateCheck cannot reach `*.hf.co`. An exact host, not a suffix, because GitHub serves release assets from one host.
+- **Only net::Client fetches.** `update::check` GETs the manifest through `net::Client::get(NetPurpose::UpdateCheck, ..)` (at most 64 KiB) and passes it to `Updater::restore_update`, which makes no request and forces `require_signed_version`. `update::install` GETs `download_url` the same way (at most 512 MiB; the guard checks every hop) and calls `Update::install(bytes)`, which runs minisign verification against the configured key, then requires the version in the signature's trusted comment to equal the manifest's version, before it touches the app. No `Update` leaves `update.rs`.
+- **Enforced.** `scripts/check-net-usage.sh` fails if non-test Rust code calls `.check()`, `download_and_install`, or `.download(` in a file that names the plugin, or if a file other than `lib.rs` and `update.rs` names `tauri_plugin_updater`. No capability grants an `updater:*` permission, so no window can call the plugin's JS commands (ACL test). The plugin is built with `default-features = false` (no system proxy, no zip).
+- **Key.** The public key is `plugins.updater.pubkey` in `tauri.conf.json`, committed empty. While it is empty, `check_for_update` fails with `updater_not_configured` before any request. The maintainer runs `pnpm tauri signer generate`, commits the `.pub` file's contents there, and keeps the private key in the release environment's secrets.
+- **Manual only.** No check at startup, no timer, no setting. The Security panel has "Check for updates", disabled with the reason while Air-Gap is on, and "Install and restart" once a newer version is found. After a verified install the app calls `AppHandle::restart`.
+- **IPC.** `check_for_update -> Option<AvailableUpdate { version }>` and `install_update`, main window only. `install_update` installs only the update the last check found. New error codes: `updater_not_configured`, `update_signature_invalid` (bad, missing, or wrong-key signature, or a signed version that differs from the manifest), `update_failed`. Air-Gap ON returns `air_gap_enabled` with zero requests sent.
+- **Release format.** The release uploads `Locite.app.tar.gz` (the Developer ID-signed, notarized, stapled app, archived after signing), its `.sig`, and `latest.json` made by `scripts/make-latest-json.sh <version> <notes-file> <sig-file> <asset-url> <pub-date>` (platform `darwin-aarch64`). The `.sig` comes from `tauri signer sign --app-version <version>`, whose trusted comment is `timestamp:<unix>\tfile:<name>\tversion:<version>`; the plugin reads the tab-separated `version:` field.
+
+### Consequences
+
+- `releases/latest/download` resolves only to the newest published release, so a draft release offers no update until it is published.
+- If GitHub moves release assets to another host, update downloads fail with `HostNotAllowed` until an ADR adds it. They never fall back to an unchecked host.
+- The plugin's `reqwest` client is compiled into the app but never called; docs/network-deps.md shows the path.
+- A pending update lives in memory and is lost on relaunch; the user checks again.
+- Tests sign packages with a throwaway Ed25519 key in the legacy minisign format (`ring`), since real `tauri signer` signatures are prehashed with BLAKE2b. A one-off run with a CLI-generated key and signature passed the same install path, and the tampered copy was rejected.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `tauri-plugin-updater` 2.14.1 (`default-features = false`) | Manifest parsing, minisign verification, macOS install | MIT OR Apache-2.0 | Has its own `reqwest` client; never called (CI check above). `restore_update` and `install` make no request. |
+| `minisign-verify`, `tar`, `filetime`, `xattr`, `osakit`, `objc2-osa-kit` (via the plugin) | Signature check, archive extraction, privileged install fallback | MIT, MIT OR Apache-2.0 | None |
+| `ring` 0.17, `base64` 0.23 (dev only, both already in the build graph) | Sign throwaway update packages in tests | Apache-2.0 AND ISC, MIT OR Apache-2.0 | None |

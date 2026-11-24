@@ -26,9 +26,9 @@ Most "chat with your documents" tools upload your files to someone else's server
 The app makes outbound network requests in exactly two cases:
 
 1. **Model download.** Fetching a model you asked for, from `huggingface.co`.
-2. **Update check.** Checking for a new app version on the project site.
+2. **Update check.** Checking for a new app version on GitHub Releases, only when you click "Check for updates". An update installs only if its signature matches the key built into the app.
 
-There is no telemetry. Each starts at one fixed host (a model download may then follow Hugging Face's redirect to its `*.hf.co` download servers). Every downloaded model file is checked against a SHA-256 pinned in the app, and fully offline machines can import the files instead. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
+There is no telemetry. Each starts at one fixed host (`huggingface.co` or `github.com`), and may then follow a redirect only to that service's download servers (`*.hf.co`, or `release-assets.githubusercontent.com`). Every downloaded model file is checked against a SHA-256 pinned in the app, and fully offline machines can import the files instead. All HTTP goes through a single client, and an **Air-Gap guard** checks every request before it is sent. Air-Gap mode is on by default.
 
 The code in this repository is all of the code in official builds. There are no private modules, so anyone can check the claim that nothing leaves the device.
 
