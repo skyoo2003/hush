@@ -32,11 +32,14 @@ jobs:
       - run: bash scripts/check-brand.sh
       - run: bash scripts/check-spdx.sh
       - run: node scripts/check-npm-licenses.mjs
+      # Networking APIs only in src-tauri/src/net; rewrites docs/network-deps.md for the drift check.
+      - run: bash scripts/check-net-usage.sh
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       # Also creates dist/, which generate_context!() embeds.
       - run: pnpm build
+      - run: node scripts/check-dist-urls.mjs
       - run: cargo fmt --check
         working-directory: src-tauri
       - run: cargo clippy --all-targets -- -D warnings
@@ -45,7 +48,7 @@ jobs:
         working-directory: src-tauri
       # cargo test regenerates src/ipc/ through ts-rs.
       - name: Generated file drift check
-        run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json src/ipc
+        run: git diff --exit-code src/brand.ts src-tauri/tauri.conf.json src/ipc docs/network-deps.md
 
   deny:
     # cargo-deny-action runs in Docker, which macOS runners lack. It reads metadata only, so Linux is fine.
@@ -56,6 +59,18 @@ jobs:
         with:
           manifest-path: src-tauri/Cargo.toml
           command: check advisories bans licenses sources
+
+  audit:
+    # cargo-deny checks the built graph; cargo-audit reads every Cargo.lock entry, so it also flags
+    # locked crates no build uses. Vulnerabilities fail; unmaintained and unsound are warnings.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+        working-directory: src-tauri
 
   dco:
     # Dependabot cannot sign off. Keyed on the authenticated PR author, not the commit email anyone can set.

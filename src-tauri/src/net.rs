@@ -8,7 +8,11 @@ use std::sync::Arc;
 
 use reqwest::header::{LOCATION, RANGE};
 use reqwest::redirect::Policy;
-use reqwest::{Response, StatusCode, Url};
+use reqwest::{Response, Url};
+
+pub use reqwest::StatusCode;
+#[cfg(test)]
+pub(crate) use std::net::SocketAddr;
 
 use crate::security::airgap::{AirGapGuard, Hop, InFlight, NetPurpose};
 use crate::security::error::SecurityError;
@@ -20,6 +24,7 @@ const MAX_REDIRECTS: usize = 3;
 pub struct Client {
     http: reqwest::Client,
     guard: Arc<AirGapGuard>,
+    calls: AtomicUsize,
     sent: AtomicUsize,
     /// Tests talk plain HTTP to a local server that the client resolves allowed hosts to.
     #[cfg(test)]
@@ -70,6 +75,7 @@ impl Client {
         Ok(Self {
             http,
             guard,
+            calls: AtomicUsize::new(0),
             sent: AtomicUsize::new(0),
             #[cfg(test)]
             allow_http: false,
@@ -81,7 +87,7 @@ impl Client {
     pub(crate) fn for_local_server(
         guard: Arc<AirGapGuard>,
         hosts: &[&str],
-        addr: std::net::SocketAddr,
+        addr: SocketAddr,
     ) -> Self {
         let b = hosts
             .iter()
@@ -89,6 +95,14 @@ impl Client {
         let mut c = Self::build(b, guard).unwrap();
         c.allow_http = true;
         c
+    }
+
+    /// A listener on a free localhost port, for the mock servers of tests outside this module.
+    #[cfg(test)]
+    pub(crate) fn local_listener() -> (std::net::TcpListener, SocketAddr) {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        (l, addr)
     }
 
     pub fn guard(&self) -> &AirGapGuard {
@@ -111,6 +125,7 @@ impl Client {
         url: &str,
         from: u64,
     ) -> Result<Body<'_>, NetError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         let mut url = Url::parse(url).map_err(|_| NetError::InvalidUrl)?;
         for n in 0..=MAX_REDIRECTS {
             let hop = if n == 0 { Hop::First } else { Hop::Redirect };
@@ -145,6 +160,11 @@ impl Client {
                 .ok_or(NetError::InvalidUrl)?;
         }
         Err(NetError::TooManyRedirects)
+    }
+
+    /// Calls to `get`, blocked or not. Test hook.
+    pub fn call_count(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
     }
 
     /// Requests that passed the guard and were handed to reqwest. Test hook.
