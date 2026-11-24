@@ -16,7 +16,7 @@ if [ -n "$hits" ]; then
 fi
 
 # Shipped dependencies of the macOS build. Dev dependencies never reach a release.
-tree() { cargo tree -q --locked -e normal --target aarch64-apple-darwin --manifest-path src-tauri/Cargo.toml "$@"; }
+tree() { cargo tree -q --locked --color never -e normal --target aarch64-apple-darwin --manifest-path src-tauri/Cargo.toml "$@"; }
 CRATES=(reqwest hyper hyper-util hyper-rustls h2 ureq curl isahc attohttpc surf hf-hub tungstenite tokio-tungstenite)
 present=()
 for c in "${CRATES[@]}"; do
