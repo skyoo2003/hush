@@ -18,7 +18,7 @@ description: Model-check Locite's Air-Gap promise (no request leaves while Air-G
 
 ## Does my change touch this?
 
-Covered code, last confirmed against the model at commit **`ed3886e`**:
+Covered code, last confirmed against the model at commit **`0b9218f`**:
 
 | Model action | Code |
 | --- | --- |
@@ -35,7 +35,7 @@ Covered code, last confirmed against the model at commit **`ed3886e`**:
 To see whether a change touches covered code:
 
 ```sh
-git diff ed3886e -- src-tauri/src/security/airgap.rs src-tauri/src/net.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/storage/db.rs
+git diff 0b9218f -- src-tauri/src/security/airgap.rs src-tauri/src/net.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/storage/db.rs
 ```
 
 Look for these changes in the diff: a new caller of `set_enabled`, `begin`, or `Client::get`, a change to the order inside any of them, a request path that skips the `turned_on` race, a new cache of the mode, or a new way to read the setting at startup. A change elsewhere in those files, such as a new table in `db.rs`, does not need a model change.
