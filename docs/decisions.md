@@ -686,7 +686,7 @@ None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate
 - **No entitlements.** The hardened runtime runs with zero entitlements. Library validation accepts `libpdfium.dylib` because the pipeline re-signs it with the same team identity (tested with a development identity: a hardened process loaded the re-signed dylib and refused an ad-hoc one).
 - **Draft releases.** A person downloads the draft DMG, runs the Gatekeeper check on a clean Mac, and only then publishes it. Publishing a release is not automated.
 - **Self-builds.** `SIGN_IDENTITY=- scripts/sign-macos.sh` ad-hoc signs a local build without the hardened runtime or notarization (docs/building.md).
-- **Updater pending.** No updater is included. `tauri-plugin-updater` would make requests outside `net::Client` and `AirGapGuard`, which absolute rule 2 forbids; it waits for its own decision.
+- **Updater.** Signed updates are ADR-022. A fifth job, `sign-update` (Linux, environment `release`), holds only the updater key, apart from the Apple secrets: it signs the `.app.tar.gz` that `sign` made from the stapled app with the lockfile-pinned tauri CLI (`pnpm install --ignore-scripts`, so no install or build script runs) and writes `latest.json` with `scripts/make-latest-json.sh`. Each job that names the environment asks for its own approval.
 
 ### New tools (CI and release only; neither is a crate dependency or ships in the app)
 
