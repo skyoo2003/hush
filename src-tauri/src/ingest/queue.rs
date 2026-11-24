@@ -131,6 +131,8 @@ struct State {
     done: u32,
     failed: u32,
     paused: bool,
+    /// Parsed documents wait for the embedder while this is set.
+    embed_paused: bool,
 }
 
 impl State {
@@ -356,6 +358,13 @@ impl IndexQueue {
         self.shared.changed(st);
     }
 
+    /// Off: parsed documents wait before embedding, so a search has the CPU to itself.
+    pub fn set_embedding(&self, on: bool) {
+        let mut st = self.shared.lock();
+        st.embed_paused = !on;
+        self.shared.changed(st);
+    }
+
     pub fn budget(&self) -> &ConcurrencyBudget {
         &self.shared.budget
     }
@@ -488,6 +497,11 @@ impl Shared {
 
     fn embed_loop(&self, rx: Receiver<Work>) {
         for (job, attempts, parsed) in rx {
+            let mut st = self.lock();
+            while st.embed_paused && !self.cancel.is_cancelled() {
+                st = self.wake.wait(st).unwrap_or_else(|e| e.into_inner());
+            }
+            drop(st);
             let result = if self.cancel.is_cancelled() {
                 Ok(Settle::Dropped)
             } else {
@@ -993,5 +1007,32 @@ mod tests {
         assert_eq!(q.budget().get(), q.budget().max());
         assert!(q.wait_idle(WAIT));
         assert_eq!(q.progress().done, 1);
+    }
+
+    #[test]
+    fn embedding_off_parses_but_holds_the_embedder() {
+        let f = fixture(&[("a.txt", "alpha"), ("b.txt", "beta")]);
+        let embedder = Arc::new(HookEmbedder::default());
+        let q = start(&f, embedder.clone(), CancellationToken::new(), |_| {});
+        q.set_embedding(false);
+        q.rescan(f.folder, &f.root).unwrap();
+        assert!(!q.wait_idle(Duration::from_millis(300)));
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(q.progress().running, 2, "both parsed, waiting to embed");
+        q.set_embedding(true);
+        assert!(q.wait_idle(WAIT));
+        assert_eq!(q.progress().done, 2);
+    }
+
+    #[test]
+    fn cancel_wakes_an_embedder_held_by_embedding_off() {
+        let f = fixture(&[("a.txt", "alpha")]);
+        let q = start(&f, Arc::new(FakeEmbedder), CancellationToken::new(), |_| {});
+        q.set_embedding(false);
+        q.submit(job(&f, "a.txt", Reason::New));
+        assert!(!q.wait_idle(Duration::from_millis(200)));
+        // Drop cancels and joins every thread; a missed wake hangs here.
+        drop(q);
+        assert_eq!(count(&f.db, "SELECT count(*) FROM chunks"), 0);
     }
 }

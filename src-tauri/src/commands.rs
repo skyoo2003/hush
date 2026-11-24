@@ -17,6 +17,7 @@ use crate::error::{AppError, ErrorCode};
 use crate::ingest::error::WatchError;
 use crate::ingest::queue::{IndexJob, IndexProgress, IndexQueue, Reason};
 use crate::ingest::scanner::EXCLUDES_SETTING;
+use crate::ingest::scheduler::{self, ScheduleSettings, ScheduleStatus, Scheduler};
 use crate::ingest::watcher::{self, AddedFolder, FolderWatcher};
 use crate::net;
 use crate::rag::error::ModelError;
@@ -321,6 +322,41 @@ pub fn get_index_status<R: Runtime>(app: AppHandle<R>) -> IndexStatus {
         indexing: queue.is_some(),
         progress: queue.map(|q| q.progress()).unwrap_or_default(),
     }
+}
+
+#[tauri::command]
+pub fn get_schedule<R: Runtime>(app: AppHandle<R>, db: State<'_, Arc<Db>>) -> ScheduleStatus {
+    match app.try_state::<Arc<Scheduler>>() {
+        Some(s) => ScheduleStatus {
+            settings: s.settings(),
+            current: Some(s.current()),
+        },
+        None => ScheduleStatus {
+            settings: scheduler::load(&db),
+            current: None,
+        },
+    }
+}
+
+/// Saves the schedule and applies it at once. `index://schedule` reports the new state.
+#[tauri::command]
+pub fn set_schedule<R: Runtime>(
+    app: AppHandle<R>,
+    settings: ScheduleSettings,
+    db: State<'_, Arc<Db>>,
+) -> Result<ScheduleStatus, AppError> {
+    if !settings.is_valid() {
+        return Err(AppError {
+            code: ErrorCode::ScheduleInvalid,
+            message: "allowed hours must be two different times of day".into(),
+        });
+    }
+    let saved = match app.try_state::<Arc<Scheduler>>() {
+        Some(s) => s.change(&db, settings),
+        None => scheduler::save(&db, &settings),
+    };
+    saved.map_err(|_| AppError::internal("failed to save setting"))?;
+    Ok(get_schedule(app, db))
 }
 
 /// WatchError messages are fixed and carry no paths.

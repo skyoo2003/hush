@@ -39,6 +39,8 @@ pub enum ErrorCode {
     NotInCatalog,
     DownloadCancelled,
     DownloadFailed,
+    /// Allowed hours are out of range, or start and end are the same.
+    ScheduleInvalid,
 }
 
 impl AppError {

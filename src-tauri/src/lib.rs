@@ -30,6 +30,8 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::retry_document,
         commands::set_exclude_patterns,
         commands::get_index_status,
+        commands::get_schedule,
+        commands::set_schedule,
         commands::get_settings,
         commands::set_air_gap,
         commands::set_shortcut,
@@ -141,12 +143,29 @@ fn start_indexing<R: Runtime>(
         }
     };
     let queue = Arc::new(queue);
-    // shortcut: one parse worker while the user searches; ingest/scheduler.rs (week 6) takes this over.
-    let q = queue.clone();
+    use ingest::scheduler::{self, Scheduler, SCHEDULE_EVENT};
+    let (q, emitter) = (queue.clone(), app.clone());
+    let scheduler = match Scheduler::start(
+        scheduler::load(&db),
+        scheduler::system_sources(),
+        queue.budget().max(),
+        move |current| {
+            scheduler::apply(&q, current.plan);
+            desktop::set_tray_schedule(&emitter, Some(current));
+            let _ = emitter.emit(SCHEDULE_EVENT, current);
+        },
+    ) {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            tracing::warn!(error = %e, "index scheduler did not start; indexing is off");
+            return;
+        }
+    };
+    let s = scheduler.clone();
     app.listen_any(desktop::FOCUS_EVENT, move |e| {
-        let searching = e.payload() == "true";
-        q.set_concurrency(if searching { 1 } else { q.budget().max() });
+        s.set_searching(e.payload() == "true");
     });
+    app.manage(scheduler);
     match ingest::watcher::FolderWatcher::start(db, queue.clone()) {
         Ok(w) => {
             app.manage(w);
@@ -280,6 +299,8 @@ mod tests {
             "list_failed_documents",
             "retry_document",
             "set_exclude_patterns",
+            "get_schedule",
+            "set_schedule",
         ] {
             assert_acl_denied(invoke(&quick, cmd));
         }
@@ -565,6 +586,37 @@ mod tests {
         assert_eq!(
             call(&main, "get_settings", serde_json::json!({}))["excludePatterns"],
             "drafts/\n*.tmp"
+        );
+
+        // No queue yet: the schedule is saved and read back, with no current state.
+        let night = serde_json::json!({
+            "mode": "paused",
+            "allowedHours": { "startMinute": 1320, "endMinute": 420 },
+            "lowPower": "one_worker",
+        });
+        let status = call(
+            &main,
+            "set_schedule",
+            serde_json::json!({ "settings": night }),
+        );
+        assert_eq!(status["settings"], night);
+        assert!(status["current"].is_null());
+        assert_eq!(
+            call(&main, "get_schedule", serde_json::json!({}))["settings"],
+            night
+        );
+        let mut empty = night.clone();
+        empty["allowedHours"]["endMinute"] = 1320.into();
+        let err = invoke_with(
+            &main,
+            "set_schedule",
+            json(serde_json::json!({ "settings": empty })),
+        )
+        .expect_err("empty range");
+        assert_eq!(err["code"], "schedule_invalid", "got {err}");
+        assert_eq!(
+            call(&main, "get_schedule", serde_json::json!({}))["settings"],
+            night
         );
     }
 
