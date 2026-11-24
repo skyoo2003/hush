@@ -439,6 +439,53 @@ mod tests {
         assert_eq!(count, 5);
     }
 
+    #[test]
+    fn index_search_and_copy_make_no_network_call_with_air_gap_on() {
+        let app = builder(mock_builder())
+            .build(tauri::generate_context!(test = true))
+            .unwrap();
+        let (_db_dir, db) = storage::db::tests::temp_db();
+        let guard = security::airgap::AirGapGuard::load(&db).unwrap();
+        assert!(guard.is_enabled(), "Air-Gap is ON by default");
+        app.manage(net::Client::new(Arc::new(guard)).unwrap());
+        app.manage(rag::hybrid::SearchService::new(
+            Arc::new(rag::embedder::FakeEmbedder),
+            Box::new(rag::hybrid::NoopReranker),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("plan.txt"),
+            "The launch date moved to March.",
+        )
+        .unwrap();
+        ingest::pipeline::index_folder_once(
+            &db,
+            &ingest::parser::ParserRegistry::new(),
+            dir.path(),
+            &ingest::chunker::ChunkerConfig::default(),
+            &ingest::chunker::CharApprox,
+            &rag::embedder::FakeEmbedder,
+        )
+        .unwrap();
+        app.manage(Arc::new(db));
+
+        let quick = window(&app, "quick-search");
+        let body = tauri::ipc::InvokeBody::Json(serde_json::json!({ "query": "launch date" }));
+        let res = invoke_with(&quick, "search", body)
+            .unwrap()
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        let chunk_id = res["hits"][0]["chunkId"].as_i64().expect("a hit");
+        let body = tauri::ipc::InvokeBody::Json(serde_json::json!({ "chunkId": chunk_id }));
+        invoke_with(&quick, "copy_citation", body).unwrap();
+        let clip = std::process::Command::new("/usr/bin/pbpaste")
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&clip.stdout).contains("plan.txt"));
+
+        assert_eq!(app.state::<net::Client>().call_count(), 0);
+    }
+
     /// An indexed `<tmp>/Notes/plan.txt` next to `<tmp>/outside/secret.txt`, in a mock app.
     fn indexed_app() -> (
         tauri::App<MockRuntime>,

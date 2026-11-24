@@ -13,14 +13,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use super::embedder::hex;
 use super::error::ModelError;
-use crate::net::Client;
+use crate::net::{Client, StatusCode};
 use crate::security::airgap::NetPurpose;
 use crate::security::paths::ScopedPath;
 
@@ -419,9 +418,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::net::SocketAddr;
     use crate::security::airgap::AirGapGuard;
     use crate::storage::db::tests::temp_db;
-    use std::net::{SocketAddr, TcpListener};
     use std::sync::Arc;
     use tauri::async_runtime::block_on;
 
@@ -467,8 +466,7 @@ mod tests {
     }
 
     fn serve(body: Vec<u8>, redirect: bool, cut_first: Option<usize>) -> Server {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
+        let (listener, addr) = Client::local_listener();
         let seen = Arc::new(Mutex::new(Vec::new()));
         let log = seen.clone();
         std::thread::spawn(move || {
@@ -673,8 +671,7 @@ mod tests {
 
     #[test]
     fn turning_air_gap_on_stops_a_download_mid_body() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
+        let (listener, addr) = Client::local_listener();
         // Sends part of the body, then stalls with the connection open.
         std::thread::spawn(move || {
             let (mut s, _) = listener.accept().unwrap();

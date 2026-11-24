@@ -40,9 +40,12 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 bash scripts/check-brand.sh        # brand strings only via brand.rs
 bash scripts/check-spdx.sh         # SPDX header on every source file (--fix adds it)
 node scripts/check-npm-licenses.mjs
+bash scripts/check-net-usage.sh    # networking APIs only in src-tauri/src/net; rewrites docs/network-deps.md
+node scripts/check-dist-urls.mjs   # no external URLs in dist/ outside its allow list
 cd src-tauri
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 cargo deny check                   # licenses, advisories, bans, sources
+cargo audit                        # advisories for every Cargo.lock entry (cargo install cargo-audit)
 ```
 
 Tests that need real model weights are `#[ignore]`d. Run `bash scripts/fetch-models.sh`, then `cargo test --release -- --ignored`.
