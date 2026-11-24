@@ -31,6 +31,14 @@ pub enum ErrorCode {
     ShortcutInvalid,
     /// Another app holds the quick-search shortcut.
     ShortcutUnavailable,
+    /// A model download was refused or stopped because Air-Gap mode is on.
+    AirGapEnabled,
+    /// A downloaded or imported model file does not match its catalog sha256.
+    HashMismatch,
+    /// The model id, or the imported file, is not in the built-in catalog.
+    NotInCatalog,
+    DownloadCancelled,
+    DownloadFailed,
 }
 
 impl AppError {

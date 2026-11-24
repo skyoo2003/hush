@@ -13,27 +13,29 @@ description: Model-check Locite's Air-Gap promise (no request leaves while Air-G
 | --- | --- | --- |
 | `CheckedOnlyWhenOff` | While the guard is ON, no request passes `AirGapGuard::check`. | Network traffic with Air-Gap ON (absolute rules 1–2). |
 | `NoSendAfterOnAck` | Once `set_air_gap(true)` has returned Ok, no request leaves until the user turns Air-Gap OFF. | The user sees "ON" but a request still goes out. |
+| `NoBodyAfterOnAck` | Once `set_air_gap(true)` has returned Ok, no response body is still being read. | A model download keeps streaming after the user sees "ON". |
 | `OnSurvivesRestart` | If the user was last told ON, the relaunched app is ON. | The app silently relaunches with the network open. |
 
 ## Does my change touch this?
 
-Covered code, last confirmed against the model at commit **`5a3521d`**:
+Covered code, last confirmed against the model at commit **`ed3886e`**:
 
 | Model action | Code |
 | --- | --- |
-| `ToggleStart` / `ToggleWrite` / `ToggleWriteFails` / `ToggleStore` | `src-tauri/src/security/airgap.rs` `AirGapGuard::set_enabled` (persist, then `on.send_replace`), called only from `src-tauri/src/commands.rs` `set_air_gap` |
+| `ToggleStart` / `ToggleWrite` / `ToggleWriteFails` / `ToggleStore` | `src-tauri/src/security/airgap.rs` `AirGapGuard::set_enabled` (persist, then `on.send_replace`), called from `src-tauri/src/commands.rs` `apply_air_gap`: by `set_air_gap`, and by `download_model` (OFF before and ON after a download the user started from the first-run offer) |
 | `ToggleDrain` | `AirGapGuard::set_enabled` with `on = true`: waits on `drained` until `in_flight` is 0, then returns |
 | `ToggleWrite` is one atomic step | `src-tauri/src/storage/db.rs` `Db::set_setting`: one upsert under the `writer` Mutex |
-| `RequestCheck` | `src-tauri/src/net.rs` `Client::get`: `self.guard.begin(purpose, host)?`, which counts the request in `in_flight`, then calls `check` |
-| `RequestSend` | `Client::get`: the `send()` branch of the `tokio::select!` completes |
-| `RequestCancel` | `Client::get`: the `turned_on()` branch of the `tokio::select!` wins, and the `InFlight` drop decrements `in_flight` |
+| `RequestCheck` | `src-tauri/src/net.rs` `Client::get`: `self.guard.begin(purpose, host, hop)?`, which counts the request in `in_flight`, then calls `check`. Each redirect hop is another `RequestCheck`, after the previous hop's `InFlight` is dropped. |
+| `RequestSend` | `Client::get`: the `send()` branch of the `tokio::select!` completes; the returned `Body` keeps the `InFlight` |
+| `BodyDone` | `Body::chunk` returns None, or the caller drops the `Body` |
+| `RequestCancel` | `Client::get` or `Body::chunk`: the `turned_on()` branch of the `tokio::select!` wins, and the `InFlight` drop decrements `in_flight` |
 | `Restart`, `Init` | `src-tauri/src/lib.rs` `builder` setup: `AirGapGuard::load(&db)`, which is ON unless the row is `"0"` (`Db::setting`) |
 | `TogglesSerialized = TRUE` | `AirGapGuard::set_enabled` holds the `toggle` Mutex across the write, the store, and the drain, so two calls never overlap, whoever calls them. |
 
 To see whether a change touches covered code:
 
 ```sh
-git diff 5a3521d -- src-tauri/src/security/airgap.rs src-tauri/src/net.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/storage/db.rs
+git diff ed3886e -- src-tauri/src/security/airgap.rs src-tauri/src/net.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/storage/db.rs
 ```
 
 Look for these changes in the diff: a new caller of `set_enabled`, `begin`, or `Client::get`, a change to the order inside any of them, a request path that skips the `turned_on` race, a new cache of the mode, or a new way to read the setting at startup. A change elsewhere in those files, such as a new table in `db.rs`, does not need a model change.
@@ -82,4 +84,5 @@ When a row reads `UNEXPECTED`:
 - Network calls that bypass `net::Client`.
 - A failed `AirGapGuard::load` at startup. Setup aborts, so no requests happen.
 - SQLite durability itself: a committed write is assumed to survive a crash.
-- Bounds beyond 3 toggles, 2 requests, and 2 relaunches.
+- Bounds beyond 3 toggles, 2 requests, and 2 relaunches. A redirect chain counts one request per hop.
+- Liveness: that ON cancels a body instead of waiting for it to finish. `turning_air_gap_on_stops_a_download_mid_body` in `rag/models.rs` tests it.

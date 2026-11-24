@@ -182,7 +182,7 @@ The original ID `com.hush.app` ended with `.app`, which Tauri warns conflicts wi
 - The DB key is 32 bytes from `OsRng`, stored in the login keychain as service `KEYCHAIN_SERVICE`, account `db-key-v1`, and given to SQLCipher as a raw hex key (`PRAGMA key = "x'..'"`), which skips PBKDF2. `open_or_create` writes the key before creating the DB. A stored key that does not open the DB returns `WrongKey`. A missing key next to an existing DB returns `KeyMissing`. Neither case makes a new key.
 - Each connection sets `cipher_memory_security = ON`, `foreign_keys = ON`, and `temp_store = MEMORY`. The writer sets WAL. Each of the 4 readers sets `query_only`. Migrations are SQL files indexed by `user_version`, one transaction each. A DB newer than the app is rejected.
 - FTS5 (external content) and `vec0` get no FK cascade. Triggers on `chunks` keep both in sync on insert, update, and delete, including rows removed by the `documents -> chunks` cascade. So `delete_document` is one `DELETE FROM documents` statement, and every future chunk delete path is covered too. `doc_versions` also cascades.
-- Air-Gap defaults to ON and persists in `settings.airgap_enabled`. Any value other than `"0"` means ON. OFF allows exactly one host per purpose, matched exactly and case-insensitively. `net::Client` accepts only `https` URLs, follows no redirects, and uses no proxy, because either would reach a host the guard never checked.
+- Air-Gap defaults to ON and persists in `settings.airgap_enabled`. Any value other than `"0"` means ON. OFF allows exactly one host per purpose, matched exactly and case-insensitively. `net::Client` accepts only `https` URLs, follows no redirects, and uses no proxy, because either would reach a host the guard never checked. (Amended by ADR-017: `get` follows redirects itself, each hop checked.)
 - `ScopedPath` canonicalizes the root and candidate, then requires the result to stay under the root. This resolves `..`, absolute paths, and symlinks. A symlink cycle fails as `Unresolvable`.
 
 ### Allowed hosts (placeholders)
@@ -366,7 +366,7 @@ The TLA+ model (`verification/airgap/`) found that `Client::get` checked the mod
 ### Consequences
 
 - `set_enabled(true)` blocks its thread until every in-flight request reaches its next poll. A caller that holds a started `get` future without polling it would block ON forever. Only `Client::get` itself may hold an `InFlight`.
-- Reading a response body after `get` returns is not covered. Model downloads must re-check `turned_on` while they stream.
+- Reading a response body after `get` returns is not covered. Model downloads must re-check `turned_on` while they stream. (Resolved by ADR-017: `get` returns a `Body` that holds the `InFlight` and races `turned_on` per chunk.)
 
 ### New crates
 
@@ -560,3 +560,75 @@ Measured with `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml
 
 - A shortcut another app also registers (Alfred, Raycast) is not detected: it registers, and the other app wins focus.
 - The tray menu was not driven in the running app (verification stopped before it).
+
+## ADR-017. Model manager, built-in catalog, and Hugging Face CDN redirects
+
+- Date: 2026-11-24
+- Status: Accepted (changes absolute rule 2; needs the GOVERNANCE.md issue and comment period before merge)
+- Amends: ADR-003 (no redirects), ADR-009 (body reads were not covered)
+
+### Context
+
+Users need the embedding model on their machine. It is too large for the app bundle, and a fully offline machine cannot download anything. Hugging Face answers `https://huggingface.co/{repo}/resolve/{commit}/{file}` for a weights file with `302` to a CDN host (`us.aws.cdn.hf.co` for bge, e5, and the GGUF candidates, checked with `curl -I` on 2026-11-24; the `us.` prefix suggests regional hosts). Small files answer `307` to a path on `huggingface.co`. `net::Client` followed no redirects and the guard allowed exactly one host, so no weights file could be downloaded.
+
+### Decision
+
+- **Catalog.** `models/catalog.json` is built into the binary (`include_str!`). Each model has `id`, `kind` (`embedding`, `reranker`, `llm`), `license`, `redistributable`, and `files` of `{ name, url, size, sha256 }`. A list of files replaces the single `url`/`size`/`sha256` the task named, because the embedder needs three files per model. The catalog replaces `models/*/manifest.json` as the only place hashes are stored. `BertEmbedder::load` and `scripts/fetch-models.sh` read it. There is no remote catalog. URLs pin a repo commit.
+- **Redirects.** `Client::get` follows up to 3 redirects itself. Every hop passes `AirGapGuard::begin` with a `Hop`. A first hop must reach `NetPurpose::host()` exactly. A ModelDownload redirect hop may also reach a host ending in `.hf.co`. UpdateCheck gets no extra host. Each file's sha256 is pinned, so a CDN host can withhold a file but cannot change it. A suffix was chosen over an exact host list, because a regional host list would break whenever HF adds a region.
+- **Body in flight.** `get` returns a `Body` that holds the request's `InFlight` until the body is read or dropped. `Body::chunk` races `turned_on`. Turning Air-Gap ON now stops a download mid-file, and `set_enabled(true)` returns only after the body is dropped. The TLA+ model gains `BodyDone` and the `NoBodyAfterOnAck` invariant.
+- **Install.** `ModelManager` writes `{name}.part`, hashes as it goes (the kept prefix is re-hashed on resume), checks the size and sha256, `sync_all`s, and renames into `app_data_dir/models/{id}/{name}`. A file at its final name is therefore verified, and `is_installed` checks names and sizes only. A wrong hash deletes the part. A dropped connection or a cancel keeps it, and the next download sends `Range: bytes=N-`. A `200` reply to a Range request restarts the file. A `206` whose `Content-Range` does not start at N is an error.
+- **Import.** For an offline machine, the user picks a file in the native picker, which opens from Rust, so no path comes from the webview. The file is read through `ScopedPath` with its own folder as the scope, so a picked symlink cannot pull a file from elsewhere. That is the exception to rule 3's "registered folders", needed because model files live outside them. A file whose size matches no catalog file is rejected before it is read. Otherwise it is copied to `models/.import-N.part` while hashed, and renamed to the catalog file with that hash. The bytes are never parsed before the hash matches.
+- **Air-Gap.** Downloads are refused while Air-Gap is ON (`air_gap_enabled`). On first run without an embedding model, the panel offers "Turn off Air-Gap for this download" or "Import a file…". The first sends `download_model { airGapOffForDownload: true }`. Rust turns Air-Gap OFF, downloads, and turns it back ON however the download ends. Nothing turns Air-Gap off except a click.
+- **Loading.** At startup and after each install, `load_model` loads the first installed model in `embedder::MODELS` order. `ModelManager::claim_embedder_load` makes sure only one call starts the queue.
+- **IPC.** `list_models`, `download_model`, `cancel_model_download`, and `import_model_file` are main window only. Progress goes to `models://progress` at most every 200 ms. New error codes: `air_gap_enabled`, `hash_mismatch`, `not_in_catalog`, `download_cancelled`, `download_failed`.
+
+### Consequences
+
+- If the app quits during a download that turned Air-Gap OFF temporarily, it relaunches with Air-Gap OFF. The user still sees that state in the panel and the tray.
+- `.import-N.part` files left by a crash are not cleaned up.
+- `rag/models.rs` does file I/O, which the module boundary in CLAUDE.md reserves for other modules. The task placed it there. It reads only `app_data_dir/models` and the picked file.
+- No new crates.
+
+## ADR-018. Local LLM candidate: Phi-4-mini-instruct Q4_K_M
+
+- Date: 2026-11-24
+- Status: Accepted for the synthesizer work. The task asked for ADR-004, but that number is taken (page cache, Air-Gap command), so it is ADR-018.
+
+### Context
+
+Cited Q&A needs a local LLM of about 3B parameters, quantized to GGUF Q4_K_M, that runs on an 8 GB Apple Silicon Mac. Its license must let the project redistribute the weights in the offline kit without adding use restrictions on top of the GPL.
+
+### Method
+
+`llama-bench` from Homebrew llama.cpp 1.0.0, Metal with all layers on the GPU, 4 threads. Prompt processing is 512 tokens (`pp512`), generation is 128 tokens (`tg128`), each repeated 3 times at context depth 0 and 2 times at depth 4096 (`-d 4096`), which is a typical RAG prompt. Each file was pinned to a repo commit and matched against Hugging Face's `x-linked-etag` sha256. Peak RSS comes from `/usr/bin/time -l` and includes the memory-mapped weights. Run on an **M4, 16 GB** (no 8 GB Mac was available). The script is not kept in the repo (throwaway). The commands are the ones above.
+
+### Results (measured, M4 16 GB, tokens per second)
+
+| Model (Q4_K_M) | Params | File | License | Korean on card | pp512 d0 | tg128 d0 | pp512 d4096 | tg128 d4096 | Peak RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SmolLM3-3B | 3.08B | 1.92 GB | Apache-2.0 | No | 414 | 47.8 | 316 | 40.6 | 2.12 GB |
+| Qwen2.5-3B-Instruct | 3.40B | 2.10 GB | Qwen Research (non-commercial) | n/a | 412 | 46.2 | 287 | 38.8 | 2.28 GB |
+| Llama-3.2-3B-Instruct | 3.21B | 2.02 GB | Llama 3.2 Community (AUP, attribution) | No | 412 | 45.6 | 292 | 36.3 | 2.26 GB |
+| Gemma-3-4B-it | 3.88B | 2.49 GB | Gemma Terms (prohibited-use policy) | Not listed | 361 | 36.6 | 329 | 33.1 | 2.71 GB |
+| **Phi-4-mini-instruct** | 3.84B | 2.49 GB | **MIT** | **Yes** | 354 | 35.8 | 245 | 29.1 | 2.73 GB |
+| Qwen3-4B-Instruct-2507 | 4.02B | 2.50 GB | Apache-2.0 | Not listed | 315 | 36.2 | 164 | 23.1 | 2.73 GB |
+
+Run-to-run spread was below 1% for every number (stddev at most 2 t/s on pp, 0.3 t/s on tg).
+
+### Estimates for an 8 GB Mac (not measured)
+
+- Generation is bound by memory bandwidth, so scaling the depth-4096 `tg128` by bandwidth (M1 68 GB/s, M2/M3 100 GB/s, M4 120 GB/s) gives Phi-4-mini about 16 to 24 t/s.
+- Prompt processing is bound by GPU compute. A 4k-token prompt takes about 14 s on the M4 for Phi-4-mini (4096 / the mean of 354 and 245). Expect roughly 20 to 25 s on an M1.
+- Memory: about 2.7 GB of weights plus the app (embedder about 0.2 GB, SQLite cache up to 1 GiB per ADR-004) fits in 8 GB. It will push other apps into compression or swap.
+
+### Decision
+
+- **Phi-4-mini-instruct Q4_K_M** is the default LLM. It has the only license here that is both permissive (MIT) and lists Korean on its card, and the UI and the "not found" answer are Korean. It is the third slowest (29 t/s at depth 4096 on the M4).
+- Excluded on license: Qwen2.5-3B (non-commercial), and Llama 3.2 and Gemma 3. Llama 3.2 and Gemma 3 can be redistributed, but they add use policies and attribution terms that users would have to accept on top of the GPL.
+- Not chosen: SmolLM3-3B is the fastest and Apache-2.0, but its card lists no Korean. Qwen3-4B-2507 is Apache-2.0, but its prompt processing at depth 4096 is the slowest (164 t/s), which would roughly double time to first token on an 8 GB Mac.
+- Pin, for the catalog entry once the synthesizer can load it: `https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/7ff82c2aaa4dde30121698a973765f39be5288c0/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf`, size 2491874688, sha256 `01999f17c39cc3074afae5e9c539bc82d45f2dd7faa3917c66cbef76fce8c0c2`. It is left out of `models/catalog.json` until then, so the app does not offer a 2.5 GB download that nothing uses.
+
+### Not measured
+
+- Answer quality and how well each model follows citations. That needs the synthesizer and an eval in the style of `eval/`. Rerun this table against that eval before shipping.
+- A real 8 GB machine, and a llama.cpp binding inside the app (its crate and license go in a new ADR).

@@ -7,7 +7,7 @@ A Zero-Cloud RAG desktop app that indexes, searches, and summarizes documents in
 ## Absolute rules (if a task would require breaking one, stop and report)
 
 1. Do not write code that sends document content, chunks, embeddings, queries, or file paths over the network.
-2. All outbound HTTP goes through the single `net::Client`, and every request first calls `security::airgap::AirGapGuard::check(NetPurpose)`. Only two purposes are allowed: ModelDownload and UpdateCheck, each with exactly one allowed host. There is no telemetry. Sponsorship is handled only through the external browser or a QR code; the app makes no requests for it.
+2. All outbound HTTP goes through the single `net::Client`, and every request first calls `security::airgap::AirGapGuard::check(NetPurpose)`. Only two purposes are allowed: ModelDownload and UpdateCheck. Each request starts at exactly one allowed host; only a ModelDownload redirect may continue to a Hugging Face CDN host (`*.hf.co`), and every hop passes the guard again (ADR-017). There is no telemetry. Sponsorship is handled only through the external browser or a QR code; the app makes no requests for it.
 3. File reads are allowed only on paths validated by `security::paths::ScopedPath`. Paths outside registered folders, `..`, and symlink escapes are forbidden.
 4. Paths, snippets, metadata, vectors, the FTS index, and change history are stored only in the single SQLCipher DB. Plaintext caches and temp files are forbidden.
 5. Logs never contain document bodies, snippets, queries, file names, or keys. Use doc_id when identification is needed. Counters such as search counts may be logged, but query strings are never stored anywhere.

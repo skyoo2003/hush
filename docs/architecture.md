@@ -55,7 +55,7 @@ flowchart TD
 
 ## Network boundary
 
-The app makes outbound requests for two purposes only, each to exactly one host. Air-Gap mode is on by default and blocks both. Sponsorship links open in the external browser, and the app itself sends no request for them.
+The app makes outbound requests for two purposes only, each starting at exactly one host. A model download may follow a redirect to a Hugging Face CDN host (`*.hf.co`); each hop passes the guard again. Air-Gap mode is on by default and blocks both. Sponsorship links open in the external browser, and the app itself sends no request for them.
 
 ```mermaid
 flowchart LR
@@ -70,6 +70,7 @@ flowchart LR
   G -- "Air-Gap on, other host,<br/>or other purpose" --> BLOCK["Rejected before sending"]
 ```
 
-- `NetPurpose` has two variants, and `NetPurpose::host()` maps each to its one allowed host. Hosts are compared exactly, so subdomains do not match.
+- `NetPurpose` has two variants, and `NetPurpose::host()` maps each to the one host its requests start at. Hosts are compared exactly, so subdomains do not match. `net::Client::get` follows at most 3 redirects itself, and a ModelDownload redirect hop may reach a `*.hf.co` host (ADR-017).
+- A response body stays in flight until it is read or dropped, so turning Air-Gap on stops a download mid-file.
 - Turning Air-Gap on cancels in-flight requests, and the setting survives a relaunch. This is model-checked with TLA+ in `verification/airgap/`.
 - There is no telemetry and no license or payment check, so nothing else needs the network.

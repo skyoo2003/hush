@@ -1,25 +1,27 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Fetches pinned embedding model files into models/{id}/ (git-ignored except manifest.json)
-# and checks each against the tracked manifest. Developer tooling only: the app never runs it.
+# Fetches the embedding models in models/catalog.json into models/{id}/ (git-ignored) and checks
+# each file's sha256 against the catalog. Developer tooling only: the app installs models itself.
 # Idempotent: files that already match are not downloaded again.
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)/models"
 
-fetch() { # id repo commit
-  for f in config.json tokenizer.json model.safetensors; do
-    want=$(sed -n "s/.*\"$f\": \"\([0-9a-f]*\)\".*/\1/p" "$root/$1/manifest.json")
-    out="$root/$1/$f"
-    if [ -f "$out" ] && echo "$want  $out" | shasum -a 256 -c - >/dev/null 2>&1; then
-      continue
-    fi
-    curl -fsSL -o "$out.part" "https://huggingface.co/$2/resolve/$3/$f"
-    echo "$want  $out.part" | shasum -a 256 -c - >/dev/null || { rm -f "$out.part"; echo "fetch-models: $1/$f checksum mismatch" >&2; exit 2; }
-    mv "$out.part" "$out"
-  done
-  echo "fetch-models: $1 ok"
-}
-
-fetch bge-small-en-v1.5 BAAI/bge-small-en-v1.5 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
-fetch multilingual-e5-small intfloat/multilingual-e5-small 614241f622f53c4eeff9890bdc4f31cfecc418b3
+# One "id name url sha256" line per embedding model file.
+python3 -I -c '
+import json, sys
+for m in json.load(open(sys.argv[1]))["models"]:
+    if m["kind"] == "embedding":
+        for f in m["files"]:
+            print(m["id"], f["name"], f["url"], f["sha256"])
+' "$root/catalog.json" | while read -r id name url sha; do
+  out="$root/$id/$name"
+  mkdir -p "$root/$id"
+  if [ -f "$out" ] && echo "$sha  $out" | shasum -a 256 -c - >/dev/null 2>&1; then
+    continue
+  fi
+  curl -fsSL -o "$out.part" "$url"
+  echo "$sha  $out.part" | shasum -a 256 -c - >/dev/null || { rm -f "$out.part"; echo "fetch-models: $id/$name checksum mismatch" >&2; exit 2; }
+  mv "$out.part" "$out"
+done
+echo "fetch-models: ok"

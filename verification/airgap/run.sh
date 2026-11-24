@@ -13,6 +13,7 @@ JAR="${XDG_CACHE_HOME:-$HOME/.cache}/locite-tla/tla2tools-$TLA_VERSION.jar"
 EXPECTED="
 AirGap:CheckedOnlyWhenOff:PASS
 AirGap:NoSendAfterOnAck:PASS
+AirGap:NoBodyAfterOnAck:PASS
 AirGap:OnSurvivesRestart:PASS
 "
 

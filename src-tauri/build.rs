@@ -24,6 +24,9 @@ const COMMANDS: &[&str] = &[
     "set_air_gap",
     "set_shortcut",
     "list_models",
+    "download_model",
+    "cancel_model_download",
+    "import_model_file",
     "export_pack",
 ];
 

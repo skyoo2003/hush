@@ -19,7 +19,9 @@ use crate::ingest::queue::{IndexJob, IndexProgress, IndexQueue, Reason};
 use crate::ingest::scanner::EXCLUDES_SETTING;
 use crate::ingest::watcher::{self, AddedFolder, FolderWatcher};
 use crate::net;
+use crate::rag::error::ModelError;
 use crate::rag::hybrid::{self, SearchMode, SearchResults, SearchService};
+use crate::rag::models::{self, ImportedFile, ModelInfo, ModelManager};
 use crate::rag::query_parser;
 use crate::security::error::SecurityError;
 use crate::security::paths::ScopedPath;
@@ -377,10 +379,19 @@ pub fn set_air_gap<R: Runtime>(
     db: State<'_, Arc<Db>>,
     net: State<'_, net::Client>,
 ) -> Result<(), AppError> {
+    apply_air_gap(&app, &db, &net, enabled)
+}
+
+fn apply_air_gap<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    net: &net::Client,
+    on: bool,
+) -> Result<(), AppError> {
     net.guard()
-        .set_enabled(&db, enabled)
+        .set_enabled(db, on)
         .map_err(|_| AppError::internal("failed to save setting"))?;
-    desktop::set_tray_air_gap(&app, enabled);
+    desktop::set_tray_air_gap(app, on);
     Ok(())
 }
 
@@ -423,8 +434,94 @@ pub fn set_exclude_patterns<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn list_models() -> Result<(), AppError> {
-    Err(AppError::not_implemented())
+pub fn list_models(models: State<'_, ModelManager>) -> Vec<ModelInfo> {
+    models.list()
+}
+
+fn model_error(e: ModelError) -> AppError {
+    let code = match e {
+        ModelError::AirGapEnabled => ErrorCode::AirGapEnabled,
+        ModelError::HashMismatch => ErrorCode::HashMismatch,
+        ModelError::NotInCatalog | ModelError::UnknownModel => ErrorCode::NotInCatalog,
+        ModelError::Cancelled => ErrorCode::DownloadCancelled,
+        _ => {
+            // ModelError messages carry no paths, URLs, or hosts.
+            tracing::warn!(error = %e, "model install failed");
+            ErrorCode::DownloadFailed
+        }
+    };
+    AppError {
+        code,
+        message: e.to_string(),
+    }
+}
+
+/// Downloads a catalog model; progress goes to `models::PROGRESS_EVENT`. With
+/// `air_gap_off_for_download` (sent only by the user's click on that offer), Air-Gap is turned
+/// OFF for this download and back ON when it ends, however it ends. Otherwise Air-Gap ON refuses.
+#[tauri::command]
+pub async fn download_model<R: Runtime>(
+    app: AppHandle<R>,
+    id: String,
+    air_gap_off_for_download: bool,
+) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (Some(db), Some(net), Some(models)) = (
+            app.try_state::<Arc<Db>>(),
+            app.try_state::<net::Client>(),
+            app.try_state::<ModelManager>(),
+        ) else {
+            return Err(AppError::internal("app is not ready"));
+        };
+        let restore = air_gap_off_for_download && net.guard().is_enabled();
+        if restore {
+            apply_air_gap(&app, &db, &net, false)?;
+        }
+        // A dedicated blocking thread drives the download, so its file writes never block the runtime.
+        let r = tauri::async_runtime::block_on(models.download(&net, &id, |p| {
+            let _ = app.emit(models::PROGRESS_EVENT, p);
+        }));
+        if restore {
+            apply_air_gap(&app, &db, &net, true)?;
+        }
+        r.map_err(model_error)?;
+        crate::load_model(&app);
+        Ok(())
+    })
+    .await
+    .map_err(|_| AppError::internal("download task failed"))?
+}
+
+/// True if a download of `id` was running. Its partial files stay for the next download.
+#[tauri::command]
+pub fn cancel_model_download(id: String, models: State<'_, ModelManager>) -> bool {
+    models.cancel(&id)
+}
+
+/// Opens the native file picker from Rust, so no path comes from the webview, then installs the
+/// picked file if its sha256 is in the catalog. None if the user cancelled the picker.
+#[tauri::command]
+pub async fn import_model_file<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<Option<ImportedFile>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(picked) = app.dialog().file().blocking_pick_file() else {
+            return Ok(None);
+        };
+        let path = picked
+            .into_path()
+            .map_err(|_| model_error(ModelError::NotInCatalog))?;
+        let models = app
+            .try_state::<ModelManager>()
+            .ok_or_else(|| AppError::internal("app is not ready"))?;
+        let imported = models.import(&path).map_err(model_error)?;
+        if imported.model_installed {
+            crate::load_model(&app);
+        }
+        Ok(Some(imported))
+    })
+    .await
+    .map_err(|_| AppError::internal("import task failed"))?
 }
 
 #[tauri::command]

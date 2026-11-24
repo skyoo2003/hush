@@ -2,6 +2,5 @@ node_modules
 dist
 .verify/
 docs/progress.md
-# Model weights: scripts/fetch-models.sh downloads them; only manifests are tracked.
-models/*/*
-!models/*/manifest.json
+# Model weights: scripts/fetch-models.sh downloads them; only models/catalog.json is tracked.
+models/*/

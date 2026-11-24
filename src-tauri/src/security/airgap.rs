@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Air-Gap mode. ON (the default) blocks every outbound request. OFF allows exactly one host per purpose.
+//! Air-Gap mode. ON (the default) blocks every outbound request. OFF allows one starting host per purpose (plus `*.hf.co` redirects for model downloads).
 
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 
@@ -21,7 +21,7 @@ pub enum NetPurpose {
 impl NetPurpose {
     pub const ALL: [Self; 2] = [Self::ModelDownload, Self::UpdateCheck];
 
-    /// The one host this purpose may reach. Compared exactly, so subdomains do not match.
+    /// The one host a request for this purpose starts at. Compared exactly, so subdomains do not match.
     pub fn host(self) -> &'static str {
         match self {
             Self::ModelDownload => "huggingface.co",
@@ -30,6 +30,27 @@ impl NetPurpose {
                 rest.split('/').next().unwrap_or(rest)
             }
         }
+    }
+}
+
+/// Where a request is in its redirect chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hop {
+    First,
+    Redirect,
+}
+
+impl NetPurpose {
+    /// Model weights redirect from `huggingface.co` to a regional `*.hf.co` CDN host (ADR-017).
+    /// Only a redirect may reach those hosts; the first request must go to `host()`.
+    fn allows(self, host: &str, hop: Hop) -> bool {
+        let host = host.to_ascii_lowercase();
+        host == self.host()
+            || (hop == Hop::Redirect
+                && self == Self::ModelDownload
+                && host
+                    .strip_suffix(".hf.co")
+                    .is_some_and(|sub| !sub.is_empty()))
     }
 }
 
@@ -93,10 +114,15 @@ impl AirGapGuard {
     /// Registers the request, then checks it. Registering first is what lets `set_enabled(true)`
     /// wait for every request that could have seen OFF. The caller must keep driving the request
     /// to completion or drop it, and must race it against `turned_on`.
-    pub fn begin(&self, purpose: NetPurpose, host: &str) -> Result<InFlight<'_>, SecurityError> {
+    pub fn begin(
+        &self,
+        purpose: NetPurpose,
+        host: &str,
+        hop: Hop,
+    ) -> Result<InFlight<'_>, SecurityError> {
         *lock(&self.in_flight) += 1;
         let req = InFlight(self);
-        self.check(purpose, host)?;
+        self.check(purpose, host, hop)?;
         Ok(req)
     }
 
@@ -106,10 +132,10 @@ impl AirGapGuard {
         let _ = self.on.subscribe().wait_for(|on| *on).await;
     }
 
-    pub fn check(&self, purpose: NetPurpose, host: &str) -> Result<(), SecurityError> {
+    pub fn check(&self, purpose: NetPurpose, host: &str, hop: Hop) -> Result<(), SecurityError> {
         if self.is_enabled() {
             Err(SecurityError::AirGapEnabled)
-        } else if host.eq_ignore_ascii_case(purpose.host()) {
+        } else if purpose.allows(host, hop) {
             Ok(())
         } else {
             Err(SecurityError::HostNotAllowed)
@@ -135,7 +161,7 @@ mod tests {
                     .map(String::from)
                     .into_iter()
                     .chain(others.map(|o| o.host().to_owned()));
-                let allowed = guard.check(p, p.host());
+                let allowed = guard.check(p, p.host(), Hop::First);
                 if on {
                     assert!(
                         matches!(allowed, Err(SecurityError::AirGapEnabled)),
@@ -143,10 +169,10 @@ mod tests {
                     );
                 } else {
                     assert!(allowed.is_ok(), "{p:?}");
-                    assert!(guard.check(p, &p.host().to_uppercase()).is_ok());
+                    assert!(guard.check(p, &p.host().to_uppercase(), Hop::First).is_ok());
                 }
                 for host in denied {
-                    let r = guard.check(p, &host);
+                    let r = guard.check(p, &host, Hop::First);
                     if on {
                         assert!(matches!(r, Err(SecurityError::AirGapEnabled)));
                     } else {
@@ -161,11 +187,42 @@ mod tests {
     }
 
     #[test]
+    fn only_a_model_redirect_may_reach_an_hf_cdn_host() {
+        let (_dir, db) = temp_db();
+        let guard = AirGapGuard::load(&db).unwrap();
+        let md = NetPurpose::ModelDownload;
+        let cdn = "us.aws.cdn.hf.co";
+        assert!(matches!(
+            guard.check(md, cdn, Hop::Redirect),
+            Err(SecurityError::AirGapEnabled)
+        ));
+        guard.set_enabled(&db, false).unwrap();
+        assert!(guard.check(md, cdn, Hop::Redirect).is_ok());
+        assert!(guard.check(md, "CDN-LFS.HF.CO", Hop::Redirect).is_ok());
+        assert!(guard.check(md, md.host(), Hop::Redirect).is_ok());
+        for (p, host, hop) in [
+            (md, cdn, Hop::First),
+            (md, "hf.co", Hop::Redirect),
+            (md, "evil-hf.co", Hop::Redirect),
+            (md, "hf.co.evil.example", Hop::Redirect),
+            (NetPurpose::UpdateCheck, cdn, Hop::Redirect),
+        ] {
+            assert!(
+                matches!(
+                    guard.check(p, host, hop),
+                    Err(SecurityError::HostNotAllowed)
+                ),
+                "{p:?} {host} {hop:?}"
+            );
+        }
+    }
+
+    #[test]
     fn turning_on_waits_for_in_flight_requests() {
         let (_dir, db) = temp_db();
         let (guard, p) = (AirGapGuard::load(&db).unwrap(), NetPurpose::ModelDownload);
         guard.set_enabled(&db, false).unwrap();
-        let req = guard.begin(p, p.host()).unwrap();
+        let req = guard.begin(p, p.host(), Hop::First).unwrap();
         let (g, d) = (&guard, &db);
         std::thread::scope(|s| {
             let (tx, rx) = std::sync::mpsc::channel();
@@ -181,7 +238,7 @@ mod tests {
             rx.recv_timeout(Duration::from_secs(5)).unwrap();
         });
         assert!(matches!(
-            guard.begin(p, p.host()),
+            guard.begin(p, p.host(), Hop::First),
             Err(SecurityError::AirGapEnabled)
         ));
         // A blocked request is not left in flight, so the next ON returns at once.
