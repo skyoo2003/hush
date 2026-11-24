@@ -12,7 +12,7 @@ Thanks for helping. Locite indexes private documents entirely on-device, so ever
 
 ## Development setup
 
-You need macOS on Apple Silicon, the Xcode Command Line Tools (`xcode-select --install`), [Rust](https://rustup.rs/) stable, Node.js 26, and pnpm 10. The crate builds only on macOS because of the keychain key provider and Vision OCR.
+You need macOS on Apple Silicon, the Xcode Command Line Tools (`xcode-select --install`), [rustup](https://rustup.rs/) (it installs the Rust version pinned in `rust-toolchain.toml`), Node.js 26, and pnpm 10. The crate builds only on macOS because of the keychain key provider and Vision OCR.
 
 ```sh
 pnpm install
@@ -39,6 +39,7 @@ Run everything CI runs before you push. `pnpm build` comes before `cargo test` b
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 bash scripts/check-brand.sh        # brand strings only via brand.rs
 bash scripts/check-spdx.sh         # SPDX header on every source file (--fix adds it)
+bash scripts/check-workflows.sh    # secrets and environments only in release.yml, which runs on tags only
 node scripts/check-npm-licenses.mjs
 bash scripts/check-net-usage.sh    # networking APIs only in src-tauri/src/net; rewrites docs/network-deps.md
 node scripts/check-dist-urls.mjs   # no external URLs in dist/ outside its allow list

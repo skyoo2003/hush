@@ -667,3 +667,30 @@ None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate
 ### New crates
 
 - `qrcode` 0.15 (MIT OR Apache-2.0), with `default-features = false, features = ["svg"]`, so it pulls in no dependencies (the default `image` feature is off). It encodes a string into an SVG QR code in memory. No network use, no file access.
+
+## ADR-021. Release pipeline
+
+- Date: 2026-11-25
+- Status: Accepted
+
+### Decision
+
+- `.github/workflows/release.yml` runs only on a pushed `v*` tag. Every action is pinned by commit SHA, the workflow starts with no permissions, and each job grants only what it needs. Four jobs:
+  1. `gate` (Linux, read-only): the tag is `vX.Y.Z`, the tagged commit is on `main`, the version in `tauri.conf.json`, `Cargo.toml`, and `package.json` equals the tag, and CHANGELOG.md has a section for it (`scripts/release-notes.sh`).
+  2. `build` (macOS, read-only, no environment, no secrets): toolchain from `rust-toolchain.toml`, `pnpm install`, PDFium, `pnpm tauri build --bundles app`. It also writes the CycloneDX SBOM, `THIRD_PARTY_NOTICES.txt`, the `git archive` source tarball of the tag (checked to contain both lockfiles), and the release notes. No caches are restored, so no other workflow run can feed state into a release.
+  3. `sign` (macOS, environment `release`): checks out the tag only for its scripts, imports the Developer ID certificate into a temporary keychain with `security`, signs, notarizes, and staples with `scripts/sign-macos.sh`, then checks the result with `scripts/check-signatures.sh --developer-id` and `spctl` on the DMG. The keychain and the API key file are deleted in an `if: always()` step.
+  4. `publish` (Linux, `contents: write`, `id-token: write`, `attestations: write`): `SHA256SUMS` over the DMG, SBOM, notices, and source tarball; a build provenance attestation for every asset including `SHA256SUMS`; a **draft** GitHub release.
+- **Secrets never meet build scripts.** `pnpm install` runs package lifecycle scripts and `cargo build` runs every crate's `build.rs` and proc macros: thousands of third-party programs. They run only in `build`, which has no secrets. The signing secrets are scoped to the `release` environment, which only `sign` names, and `sign` runs only this repository's scripts and Apple's tools on the finished bundle. An attacker who controls a dependency can still change the binary, but cannot take the Developer ID certificate or the notarization key, and the change stays in public source and the SBOM.
+- **Who can release.** The `release` environment requires the lead maintainer's approval and accepts deployments only from `v*` tags; a tag ruleset lets only the repository admin role create, move, or delete `v*` tags. `scripts/setup-release-environment.sh` applies both. `scripts/check-workflows.sh` (CI) fails if another workflow names a secret other than `GITHUB_TOKEN` or an environment, if any workflow uses `pull_request_target` or `workflow_run`, or if `release.yml` gains another trigger.
+- **Two notarizations.** The app is notarized and stapled before it goes into the DMG, and the DMG is notarized and stapled too. A stapled app passes Gatekeeper with no network, which is how Air-Gap users run it, including after they copy it out of the DMG. The stapled DMG passes Gatekeeper when it is opened offline.
+- **No entitlements.** The hardened runtime runs with zero entitlements. Library validation accepts `libpdfium.dylib` because the pipeline re-signs it with the same team identity (tested with a development identity: a hardened process loaded the re-signed dylib and refused an ad-hoc one).
+- **Draft releases.** A person downloads the draft DMG, runs the Gatekeeper check on a clean Mac, and only then publishes it. Publishing a release is not automated.
+- **Self-builds.** `SIGN_IDENTITY=- scripts/sign-macos.sh` ad-hoc signs a local build without the hardened runtime or notarization (docs/building.md).
+- **Updater pending.** No updater is included. `tauri-plugin-updater` would make requests outside `net::Client` and `AirGapGuard`, which absolute rule 2 forbids; it waits for its own decision.
+
+### New tools (CI and release only; neither is a crate dependency or ships in the app)
+
+| Tool | Reason | License | Network use |
+| --- | --- | --- | --- |
+| `cargo-about` 0.9.3 | Rust crate license texts for `THIRD_PARTY_NOTICES.txt` (`src-tauri/about.toml`, `about.hbs`) | MIT OR Apache-2.0 | None: run with `--frozen` (offline, locked), reading license files from the local cargo registry only, never ClearlyDefined. Installed with `cargo install --locked` from crates.io. |
+| `cargo-cyclonedx` 0.5.10 | CycloneDX 1.5 JSON SBOM of the aarch64-apple-darwin crate graph | Apache-2.0 | None: reads local `cargo metadata`. Installed with `cargo install --locked` from crates.io. |
