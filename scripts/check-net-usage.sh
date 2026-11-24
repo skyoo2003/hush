@@ -15,6 +15,23 @@ if [ -n "$hits" ]; then
   exit 1
 fi
 
+# tauri-plugin-updater has its own reqwest client behind Updater::check, Update::download, and
+# download_and_install. Only lib.rs (registration) and update.rs may name the crate, and no
+# non-test code (before `mod tests {`) may call those; update.rs fetches through net::Client.
+hits=$(grep -rlI 'tauri_plugin_updater' src-tauri/src |
+  grep -vE '^src-tauri/src/(lib\.rs|update\.rs|update/)' || true)
+for f in $(find src-tauri/src -name '*.rs' | sort); do
+  names=0
+  grep -q 'tauri_plugin_updater' "$f" && names=1
+  hits+=$(awk -v f="$f" -v names="$names" '/^mod tests \{/ { exit }
+    /\.check\(\)|download_and_install/ || (names && /\.download\(/) { print f ":" FNR ": " $0 }' "$f")
+done
+if [ -n "$hits" ]; then
+  echo "$hits"
+  echo "check-net-usage: the updater plugin's own HTTP client must not be used (ADR-022)" >&2
+  exit 1
+fi
+
 # Shipped dependencies of the macOS build. Dev dependencies never reach a release.
 tree() { cargo tree -q --locked --color never -e normal --target aarch64-apple-darwin --manifest-path src-tauri/Cargo.toml "$@"; }
 CRATES=(reqwest hyper hyper-util hyper-rustls h2 ureq curl isahc attohttpc surf hf-hub tungstenite tokio-tungstenite)
@@ -41,7 +58,9 @@ out=docs/network-deps.md
   echo "and the path by which it reaches \`locite\`. CI fails if one reaches it without going through \`reqwest\`,"
   echo "or if Rust code outside \`src-tauri/src/net\` names \`reqwest\`, \`hyper\`, \`ureq\`, \`std::net\`, \`tokio::net\`,"
   echo "\`TcpStream\`, \`TcpListener\`, or \`UdpSocket\`. \`reqwest\` is used only by \`net::Client\`, which passes"
-  echo "\`AirGapGuard::check\` before every request."
+  echo "\`AirGapGuard::check\` before every request. \`tauri-plugin-updater\` brings its own \`reqwest\` client, which the"
+  echo "app never calls: CI also fails if non-test code calls \`Updater::check\`, \`Update::download\`, or"
+  echo "\`download_and_install\`, or if a file other than \`lib.rs\` and \`update.rs\` names the plugin (ADR-022)."
   echo
   echo "Checked for and absent: $(for c in "${CRATES[@]}"; do [[ " ${present[*]} " == *" $c "* ]] || printf '`%s` ' "$c"; done | sed 's/ $//')"
   for c in "${present[@]}"; do

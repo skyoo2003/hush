@@ -41,6 +41,11 @@ pub enum ErrorCode {
     DownloadFailed,
     /// Allowed hours are out of range, or start and end are the same.
     ScheduleInvalid,
+    /// No update public key is configured, so updates cannot be verified.
+    UpdaterNotConfigured,
+    /// The update has no valid signature from the configured key for the announced version.
+    UpdateSignatureInvalid,
+    UpdateFailed,
 }
 
 impl AppError {

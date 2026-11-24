@@ -34,6 +34,8 @@ const COMMANDS: &[&str] = &[
     "cancel_model_download",
     "import_model_file",
     "export_pack",
+    "check_for_update",
+    "install_update",
 ];
 
 /// Writes only on change: tauri-build watches tauri.conf.json, so an unconditional write loops rebuilds.

@@ -5,7 +5,9 @@ Every networking crate in the shipped macOS build (`cargo tree -e normal --targe
 and the path by which it reaches `locite`. CI fails if one reaches it without going through `reqwest`,
 or if Rust code outside `src-tauri/src/net` names `reqwest`, `hyper`, `ureq`, `std::net`, `tokio::net`,
 `TcpStream`, `TcpListener`, or `UdpSocket`. `reqwest` is used only by `net::Client`, which passes
-`AirGapGuard::check` before every request.
+`AirGapGuard::check` before every request. `tauri-plugin-updater` brings its own `reqwest` client, which the
+app never calls: CI also fails if non-test code calls `Updater::check`, `Update::download`, or
+`download_and_install`, or if a file other than `lib.rs` and `update.rs` names the plugin (ADR-022).
 
 Checked for and absent: `h2` `ureq` `curl` `isahc` `attohttpc` `surf` `hf-hub` `tungstenite` `tokio-tungstenite`
 
@@ -13,7 +15,9 @@ Checked for and absent: `h2` `ureq` `curl` `isahc` `attohttpc` `surf` `hf-hub` `
 
 ```text
 reqwest
-└── locite
+├── locite
+└── tauri-plugin-updater
+    └── locite
 ```
 
 ## hyper
@@ -22,7 +26,9 @@ reqwest
 hyper
 ├── hyper-rustls
 │   └── reqwest
-│       └── locite
+│       ├── locite
+│       └── tauri-plugin-updater
+│           └── locite
 ├── hyper-util
 │   ├── hyper-rustls
 │   └── reqwest
@@ -35,7 +41,9 @@ hyper
 hyper-util
 ├── hyper-rustls
 │   └── reqwest
-│       └── locite
+│       ├── locite
+│       └── tauri-plugin-updater
+│           └── locite
 └── reqwest
 ```
 
@@ -44,5 +52,7 @@ hyper-util
 ```text
 hyper-rustls
 └── reqwest
-    └── locite
+    ├── locite
+    └── tauri-plugin-updater
+        └── locite
 ```

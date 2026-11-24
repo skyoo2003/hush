@@ -192,6 +192,22 @@ const en = {
     "Download cancelled. Downloading again continues where it stopped.",
   "models.error.downloadFailed":
     "The download failed. Downloading again continues where it stopped.",
+  "update.heading": "App updates",
+  "update.check": "Check for updates",
+  "update.checking": "Checking for updates…",
+  "update.airGapOnNote": "Air-Gap is on, so update checks are off.",
+  "update.upToDate": "You have the latest version.",
+  "update.available": "Version {version} is available.",
+  "update.install": "Install and restart",
+  "update.installing": "Downloading the update and checking its signature…",
+  "update.manualNote":
+    "Updates are checked only when you click. Only github.com and its release download server are contacted, and nothing about your documents is sent.",
+  "update.error.airGapEnabled":
+    "Air-Gap mode is on, so nothing may be downloaded. Turn it off to check for updates.",
+  "update.error.notConfigured": "Updates are not set up in this build yet.",
+  "update.error.signature":
+    "The update was rejected because its signature did not verify. Nothing was installed.",
+  "update.error.failed": "Could not check for or install the update. Try again later.",
 };
 
 export type MessageKey = keyof typeof en;
@@ -394,6 +410,23 @@ const ko: Record<MessageKey, string> = {
     "다운로드를 취소했습니다. 다시 다운로드하면 멈춘 곳부터 이어갑니다.",
   "models.error.downloadFailed":
     "다운로드가 실패했습니다. 다시 다운로드하면 멈춘 곳부터 이어갑니다.",
+  "update.heading": "앱 업데이트",
+  "update.check": "업데이트 확인",
+  "update.checking": "업데이트를 확인하는 중…",
+  "update.airGapOnNote": "에어갭이 켜져 있어 업데이트를 확인할 수 없습니다.",
+  "update.upToDate": "최신 버전을 사용하고 있습니다.",
+  "update.available": "{version} 버전을 설치할 수 있습니다.",
+  "update.install": "설치하고 다시 시작",
+  "update.installing": "업데이트를 내려받고 서명을 확인하는 중…",
+  "update.manualNote":
+    "업데이트는 직접 누를 때만 확인합니다. github.com과 그 릴리스 다운로드 서버에만 연결하며, 문서에 관한 정보는 보내지 않습니다.",
+  "update.error.airGapEnabled":
+    "에어갭 모드가 켜져 있어 아무것도 다운로드할 수 없습니다. 업데이트를 확인하려면 에어갭을 끄세요.",
+  "update.error.notConfigured": "이 빌드에는 아직 업데이트가 설정되지 않았습니다.",
+  "update.error.signature":
+    "서명을 확인하지 못해 업데이트를 거부했습니다. 아무것도 설치하지 않았습니다.",
+  "update.error.failed":
+    "업데이트를 확인하거나 설치하지 못했습니다. 나중에 다시 시도하세요.",
 };
 
 export const locale = globalThis.navigator?.language ?? "en";

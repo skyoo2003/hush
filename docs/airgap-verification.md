@@ -47,7 +47,7 @@ CI runs these on every pull request:
 
 | Check | What it proves |
 | --- | --- |
-| `scripts/check-net-usage.sh` | Rust code outside `src-tauri/src/net` never names `reqwest`, `hyper`, `ureq`, `std::net`, `tokio::net`, `TcpStream`, `TcpListener`, or `UdpSocket`, and every networking crate reaches the app only through `reqwest`. It writes [network-deps.md](network-deps.md). |
+| `scripts/check-net-usage.sh` | Rust code outside `src-tauri/src/net` never names `reqwest`, `hyper`, `ureq`, `std::net`, `tokio::net`, `TcpStream`, `TcpListener`, or `UdpSocket`, every networking crate reaches the app only through `reqwest`, and no non-test code calls tauri-plugin-updater's own HTTP client (`Updater::check`, `Update::download`, `download_and_install`). It writes [network-deps.md](network-deps.md). |
 | `cargo deny` and `cargo audit` | No dependency has a known vulnerability. |
 | `index_search_and_copy_make_no_network_call_with_air_gap_on` (`src-tauri/src/lib.rs`) | With Air-Gap ON, indexing, search, and copying a citation call `net::Client` zero times. |
 | `scripts/check-dist-urls.mjs` | The frontend build contains no external URL outside an allow list (XML namespace names, React error text, and the site and sponsor URLs from `src/brand.ts`). The webview's CSP (`connect-src ipc: http://ipc.localhost`) also blocks any fetch. |

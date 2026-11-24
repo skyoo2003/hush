@@ -55,7 +55,7 @@ flowchart TD
 
 ## Network boundary
 
-The app makes outbound requests for two purposes only, each starting at exactly one host. A model download may follow a redirect to a Hugging Face CDN host (`*.hf.co`); each hop passes the guard again. Air-Gap mode is on by default and blocks both. Sponsorship links open in the external browser, and the app itself sends no request for them.
+The app makes outbound requests for two purposes only, each starting at exactly one host. A model download may follow a redirect to a Hugging Face CDN host (`*.hf.co`), and an update check or update download to `release-assets.githubusercontent.com`; each hop passes the guard again. Updates run only on a click, and `update.rs` installs a package only after its minisign signature verifies against the key in `tauri.conf.json` (ADR-022). Air-Gap mode is on by default and blocks both. Sponsorship links open in the external browser, and the app itself sends no request for them.
 
 ```mermaid
 flowchart LR
@@ -66,11 +66,11 @@ flowchart LR
     NETC["net::Client"] --> G{"AirGapGuard::check<br/>(NetPurpose)"}
   end
   G -- "ModelDownload<br/>(Air-Gap off)" --> HF["huggingface.co"]
-  G -- "UpdateCheck<br/>(Air-Gap off)" --> SITE["Project site host<br/>(brand::SITE_URL)"]
+  G -- "UpdateCheck<br/>(Air-Gap off)" --> GH["github.com<br/>(brand::UPDATE_MANIFEST_URL)"]
   G -- "Air-Gap on, other host,<br/>or other purpose" --> BLOCK["Rejected before sending"]
 ```
 
-- `NetPurpose` has two variants, and `NetPurpose::host()` maps each to the one host its requests start at. Hosts are compared exactly, so subdomains do not match. `net::Client::get` follows at most 3 redirects itself, and a ModelDownload redirect hop may reach a `*.hf.co` host (ADR-017).
+- `NetPurpose` has two variants, and `NetPurpose::host()` maps each to the one host its requests start at. Hosts are compared exactly, so subdomains do not match. `net::Client::get` follows at most 3 redirects itself, and a ModelDownload redirect hop may reach a `*.hf.co` host (ADR-017), an UpdateCheck redirect hop exactly `release-assets.githubusercontent.com` (ADR-022).
 - A response body stays in flight until it is read or dropped, so turning Air-Gap on stops a download mid-file.
 - Turning Air-Gap on cancels in-flight requests, and the setting survives a relaunch. This is model-checked with TLA+ in `verification/airgap/`.
 - There is no telemetry and no license or payment check, so nothing else needs the network.

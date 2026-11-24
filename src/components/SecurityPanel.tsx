@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import type { DownloadProgress } from "../ipc/DownloadProgress";
 import type { ImportedFile } from "../ipc/ImportedFile";
 import type { ModelInfo } from "../ipc/ModelInfo";
+import type { AvailableUpdate } from "../ipc/AvailableUpdate";
 import type { Settings } from "../ipc/Settings";
 import {
 	formatBytes,
@@ -15,6 +16,7 @@ import {
 	modelErrorText,
 	percent,
 } from "../models";
+import { updateErrorText } from "../update";
 
 function FileList({ model }: { model: ModelInfo }) {
 	return (
@@ -42,6 +44,9 @@ export function SecurityPanel() {
 	const [progress, setProgress] = useState<Record<string, DownloadProgress>>({});
 	const [notice, setNotice] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [updating, setUpdating] = useState(false);
+	const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+	const [available, setAvailable] = useState<string | null>(null);
 
 	const refresh = useCallback(() => {
 		invoke<Settings>("get_settings").then(
@@ -103,6 +108,37 @@ export function SecurityPanel() {
 			setError(modelErrorText(e));
 		} finally {
 			refresh();
+		}
+	};
+
+	const checkUpdate = async () => {
+		setUpdating(true);
+		setUpdateStatus(t("update.checking"));
+		setAvailable(null);
+		try {
+			const u = await invoke<AvailableUpdate | null>("check_for_update");
+			setAvailable(u?.version ?? null);
+			setUpdateStatus(
+				u ? t("update.available", { version: u.version }) : t("update.upToDate"),
+			);
+		} catch (e) {
+			setUpdateStatus(updateErrorText(e));
+		} finally {
+			setUpdating(false);
+		}
+	};
+
+	// On success the app relaunches, so only a failure comes back.
+	const installUpdate = async () => {
+		setUpdating(true);
+		setUpdateStatus(t("update.installing"));
+		try {
+			await invoke("install_update");
+		} catch (e) {
+			setAvailable(null);
+			setUpdateStatus(updateErrorText(e));
+		} finally {
+			setUpdating(false);
 		}
 	};
 
@@ -207,6 +243,27 @@ export function SecurityPanel() {
 			</button>
 			{notice && <p role="status">{notice}</p>}
 			{error && <p role="alert">{error}</p>}
+
+			<h3>{t("update.heading")}</h3>
+			<p>{t("update.manualNote")}</p>
+			<button
+				type="button"
+				disabled={airGap !== false || updating}
+				onClick={() => void checkUpdate()}
+			>
+				{t("update.check")}
+			</button>
+			{airGap !== false && ` ${t("update.airGapOnNote")}`}
+			{updateStatus && <p role="status">{updateStatus}</p>}
+			{available && (
+				<button
+					type="button"
+					disabled={airGap !== false || updating}
+					onClick={() => void installUpdate()}
+				>
+					{t("update.install")}
+				</button>
+			)}
 		</section>
 	);
 }

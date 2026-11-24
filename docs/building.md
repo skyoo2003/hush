@@ -44,6 +44,8 @@ An ad-hoc signature changes on every build, so the login keychain asks for your 
 
 You may change the source and run or share your version under GPL-3.0-or-later. If you distribute it, give it a different name and icon (change `src-tauri/src/brand.rs` and the icons), as [TRADEMARK.md](../TRADEMARK.md) asks.
 
+Your build keeps the official updater key in `plugins.updater.pubkey` (`src-tauri/tauri.conf.json`), so **Check for updates** would replace your build with the next official one. Set the key to `""` to turn updates off (the check then fails before any request), or put your own key from `pnpm tauri signer generate` there and serve your own `latest.json`.
+
 ## Checking an official build
 
 Verify the files of a release against their checksums and the build provenance GitHub recorded for them:

@@ -9,6 +9,7 @@ pub mod rag;
 pub mod security;
 pub mod sponsor;
 pub mod storage;
+pub mod update;
 
 use std::sync::Arc;
 
@@ -45,9 +46,14 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::cancel_model_download,
         commands::import_model_file,
         commands::export_pack,
+        commands::check_for_update,
+        commands::install_update,
     ])
     // No window is granted a dialog permission: only `add_watched_folder` opens the picker.
     .plugin(tauri_plugin_dialog::init())
+    // No window is granted an updater permission either: `update.rs` fetches through `net::Client`.
+    .plugin(tauri_plugin_updater::Builder::new().build())
+    .manage(update::Pending::default())
     .on_window_event(desktop::on_window_event)
     .setup(|app| {
         init_tracing(&app.path().app_log_dir()?)?;
@@ -321,11 +327,18 @@ mod tests {
         // The dialog plugin is registered, but no window may call it directly.
         assert_acl_denied(invoke(&main, "plugin:dialog|open"));
         assert_acl_denied(invoke(&quick, "plugin:dialog|open"));
+        // Nor the updater plugin, whose own HTTP client would bypass `net::Client`.
+        for cmd in ["check", "download", "install", "download_and_install"] {
+            assert_acl_denied(invoke(&main, &format!("plugin:updater|{cmd}")));
+            assert_acl_denied(invoke(&quick, &format!("plugin:updater|{cmd}")));
+        }
         for cmd in [
             "list_models",
             "download_model",
             "cancel_model_download",
             "import_model_file",
+            "check_for_update",
+            "install_update",
         ] {
             assert_acl_denied(invoke(&quick, cmd));
         }
@@ -368,6 +381,11 @@ mod tests {
         );
         let err = invoke_with(&main, "download_model", unknown).expect_err("unknown id");
         assert_eq!(err["code"], "not_in_catalog", "got {err}");
+        // No public key is committed yet, so a check fails closed before any request.
+        let err = invoke(&main, "check_for_update").expect_err("no update key");
+        assert_eq!(err["code"], "updater_not_configured", "got {err}");
+        let err = invoke(&main, "install_update").expect_err("nothing checked");
+        assert_eq!(err["code"], "update_failed", "got {err}");
         assert!(app.state::<net::Client>().guard().is_enabled());
         assert_eq!(app.state::<net::Client>().sent_count(), 0);
     }

@@ -25,7 +25,7 @@ Locite has not had a stable release yet. Until 1.0, only the latest release and 
 Locite promises that documents never leave the device. These are treated as vulnerabilities:
 
 - Any network request that carries document content, chunks, embeddings, queries, or file paths.
-- Any outbound request that bypasses `AirGapGuard` or reaches a host other than the allowed model download hosts (`huggingface.co`, then by redirect only `*.hf.co`) and the update host, or any telemetry.
+- Any outbound request that bypasses `AirGapGuard` or reaches a host other than the allowed model download hosts (`huggingface.co`, then by redirect only `*.hf.co`) and the update hosts (`github.com`, then by redirect only `release-assets.githubusercontent.com`), any update installed without a valid signature, or any telemetry.
 - Reading a file outside a registered folder, including through `..` or symlinks.
 - Plaintext copies of indexed data, including caches, temp files, and logs that contain document text, queries, file names, or keys.
 - Decrypting the database without the keychain key.
