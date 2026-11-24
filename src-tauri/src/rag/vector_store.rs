@@ -58,7 +58,8 @@ pub struct SearchFilter {
 /// Shared WHERE fragment over `documents d`. Values are bound, never spliced in.
 macro_rules! filter_sql {
     () => {
-        "(:folders IS NULL OR d.folder_id IN (SELECT value FROM json_each(:folders)))
+        "d.folder_id IN (SELECT id FROM folders WHERE enabled = 1)
+         AND (:folders IS NULL OR d.folder_id IN (SELECT value FROM json_each(:folders)))
          AND (:exts IS NULL OR d.ext IN (SELECT value FROM json_each(:exts)))
          AND (:kind_exts IS NULL OR d.ext IN (SELECT value FROM json_each(:kind_exts)))
          AND (:after IS NULL OR d.mtime >= :after)

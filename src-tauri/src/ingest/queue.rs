@@ -24,6 +24,7 @@ use super::parser::ParserRegistry;
 use super::pipeline::{self, Commit, Parsed, Prepared};
 use super::scanner::{self, ScanPlan};
 use crate::rag::embedder::Embedder;
+use crate::security::error::SecurityError;
 use crate::storage::db::Db;
 
 pub const PROGRESS_EVENT: &str = "index://progress";
@@ -473,7 +474,9 @@ impl Shared {
                         let _ = tx.send((job, attempts, parsed));
                         continue;
                     }
-                    Err(PipelineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                    Err(
+                        PipelineError::Io(e) | PipelineError::Scope(SecurityError::Unresolvable(e)),
+                    ) if e.kind() == std::io::ErrorKind::NotFound => {
                         self.delete(&job).map(|()| Settle::Done)
                     }
                     Err(e) => Err(e),
@@ -927,6 +930,21 @@ mod tests {
         assert!(q.wait_idle(WAIT));
         assert_eq!(count(&f.db, "SELECT count(*) FROM documents"), 1);
         assert_eq!(count(&f.db, "SELECT count(*) FROM chunks"), 1);
+    }
+
+    #[test]
+    fn a_reindex_of_a_vanished_file_deletes_its_document() {
+        let f = fixture(&[("a.txt", "alpha")]);
+        let q = start(&f, Arc::new(FakeEmbedder), CancellationToken::new(), |_| {});
+        q.rescan(f.folder, &f.root).unwrap();
+        assert!(q.wait_idle(WAIT));
+        std::fs::remove_file(f.root.join("a.txt")).unwrap();
+
+        q.submit(job(&f, "a.txt", Reason::Reindex));
+        assert!(q.wait_idle(WAIT));
+
+        assert_eq!(count(&f.db, "SELECT count(*) FROM documents"), 0);
+        assert_eq!(q.progress().failed, 0);
     }
 
     #[test]

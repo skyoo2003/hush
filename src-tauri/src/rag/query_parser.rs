@@ -244,8 +244,10 @@ mod tests {
             path: path.into(),
             label: label.into(),
             status: FolderStatus::Active,
+            enabled: true,
             documents: 0,
             failed: 0,
+            skipped: 0,
         }
     }
 

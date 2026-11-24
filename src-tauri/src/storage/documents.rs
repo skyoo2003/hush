@@ -19,6 +19,10 @@ fn now() -> i64 {
         .unwrap_or(0)
 }
 
+fn sql_int(n: usize) -> i64 {
+    i64::try_from(n).unwrap_or(i64::MAX)
+}
+
 fn size_sql(size: u64) -> i64 {
     i64::try_from(size).unwrap_or(i64::MAX)
 }
@@ -90,15 +94,77 @@ pub struct FolderInfo {
     pub path: String,
     pub label: String,
     pub status: FolderStatus,
+    /// A disabled folder is not watched or scanned, and its documents are left out of search.
+    pub enabled: bool,
     pub documents: u32,
     /// Documents whose last index attempt failed.
     pub failed: u32,
+    /// Files the last full scan did not index: unsupported types and excluded files.
+    pub skipped: u32,
 }
 
-const FOLDER_SELECT: &str = "SELECT f.id, f.path, coalesce(f.label, f.path), f.status,
+const FOLDER_SELECT: &str = "SELECT f.id, f.path, coalesce(f.label, f.path), f.status, f.enabled,
         (SELECT count(*) FROM documents d WHERE d.folder_id = f.id),
-        (SELECT count(*) FROM documents d WHERE d.folder_id = f.id AND d.status = 'error')
+        (SELECT count(*) FROM documents d WHERE d.folder_id = f.id AND d.status = 'error'),
+        f.skipped
     FROM folders f";
+
+/// Why a document's last index attempt failed. Stored in `documents.error_code`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum FailReason {
+    Encrypted,
+    Corrupted,
+    TooLarge,
+    OcrFailed,
+    ReadFailed,
+    EmbedFailed,
+    /// Any other parse failure, and codes written before the reasons were split.
+    ParseFailed,
+}
+
+impl FailReason {
+    const ALL: [Self; 7] = [
+        Self::Encrypted,
+        Self::Corrupted,
+        Self::TooLarge,
+        Self::OcrFailed,
+        Self::ReadFailed,
+        Self::EmbedFailed,
+        Self::ParseFailed,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Encrypted => "encrypted",
+            Self::Corrupted => "corrupted",
+            Self::TooLarge => "too_large",
+            Self::OcrFailed => "ocr_failed",
+            Self::ReadFailed => "read_failed",
+            Self::EmbedFailed => "embed_failed",
+            Self::ParseFailed => "parse_failed",
+        }
+    }
+
+    fn parse(code: Option<&str>) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|r| Some(r.as_str()) == code)
+            .unwrap_or(Self::ParseFailed)
+    }
+}
+
+/// A document in a folder's error list. `rel_path` is shown only to the user who chose the folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FailedDocument {
+    #[cfg_attr(test, ts(type = "number"))]
+    pub doc_id: i64,
+    pub rel_path: String,
+    pub reason: FailReason,
+}
 
 fn folder_row(r: &rusqlite::Row) -> rusqlite::Result<FolderInfo> {
     let status: String = r.get(3)?;
@@ -112,9 +178,20 @@ fn folder_row(r: &rusqlite::Row) -> rusqlite::Result<FolderInfo> {
         } else {
             FolderStatus::Active
         },
-        documents: r.get(4)?,
-        failed: r.get(5)?,
+        enabled: r.get(4)?,
+        documents: r.get(5)?,
+        failed: r.get(6)?,
+        skipped: r.get(7)?,
     })
+}
+
+/// A document's folder and path as stored. Not yet checked: build a `ScopedPath` before use.
+#[derive(Debug, PartialEq, Eq)]
+pub struct DocFile {
+    pub folder_id: i64,
+    pub root: String,
+    pub rel_path: String,
+    pub enabled: bool,
 }
 
 /// Settings key for the model that produced the stored vectors.
@@ -174,6 +251,44 @@ impl Db {
             )
         })?;
         Ok(())
+    }
+
+    pub fn set_folder_enabled(&self, id: i64, enabled: bool) -> Result<(), StorageError> {
+        self.write(|c| {
+            c.execute(
+                "UPDATE folders SET enabled = ?2 WHERE id = ?1",
+                params![id, enabled],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_folder_skipped(&self, id: i64, skipped: usize) -> Result<(), StorageError> {
+        self.write(|c| {
+            c.execute(
+                "UPDATE folders SET skipped = ?2 WHERE id = ?1",
+                params![id, sql_int(skipped)],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// The folder's documents whose last index attempt failed, by path.
+    pub fn failed_documents(&self, folder_id: i64) -> Result<Vec<FailedDocument>, StorageError> {
+        self.read(|c| {
+            c.prepare(
+                "SELECT id, rel_path, error_code FROM documents
+                 WHERE folder_id = ?1 AND status = 'error' ORDER BY rel_path",
+            )?
+            .query_map([folder_id], |r| {
+                Ok(FailedDocument {
+                    doc_id: r.get(0)?,
+                    rel_path: r.get(1)?,
+                    reason: FailReason::parse(r.get::<_, Option<String>>(2)?.as_deref()),
+                })
+            })?
+            .collect()
+        })
     }
 
     /// One transaction: the folder's documents (their chunks, vectors, FTS rows, and
@@ -314,27 +429,42 @@ impl Db {
         })
     }
 
-    /// Folder root and relative path of the document holding `chunk`; `None` when the chunk is gone.
-    pub fn chunk_file(&self, chunk: ChunkId) -> Result<Option<(String, String)>, StorageError> {
+    /// Where the document holding `chunk` lives; `None` when the chunk is gone.
+    pub fn chunk_file(&self, chunk: ChunkId) -> Result<Option<DocFile>, StorageError> {
+        self.doc_file("JOIN chunks c ON c.doc_id = d.id WHERE c.id = ?1", chunk.0)
+    }
+
+    /// Where `doc` lives; `None` when the document is gone.
+    pub fn document_file(&self, doc: DocId) -> Result<Option<DocFile>, StorageError> {
+        self.doc_file("WHERE d.id = ?1", doc.0)
+    }
+
+    fn doc_file(&self, tail: &str, id: i64) -> Result<Option<DocFile>, StorageError> {
         self.read(|c| {
             c.query_row(
-                "SELECT f.path, d.rel_path FROM chunks c
-                 JOIN documents d ON d.id = c.doc_id
-                 JOIN folders f ON f.id = d.folder_id
-                 WHERE c.id = ?1",
-                [chunk.0],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                &format!(
+                    "SELECT d.folder_id, f.path, d.rel_path, f.enabled FROM documents d
+                     JOIN folders f ON f.id = d.folder_id {tail}"
+                ),
+                [id],
+                |r| {
+                    Ok(DocFile {
+                        folder_id: r.get(0)?,
+                        root: r.get(1)?,
+                        rel_path: r.get(2)?,
+                        enabled: r.get(3)?,
+                    })
+                },
             )
             .optional()
         })
     }
 
-    /// `code` is a fixed identifier such as `parse_failed`, never a message with document data.
-    pub fn mark_error(&self, doc: DocId, code: &str) -> Result<(), StorageError> {
+    pub fn mark_error(&self, doc: DocId, reason: FailReason) -> Result<(), StorageError> {
         self.write(|c| {
             c.execute(
                 "UPDATE documents SET status = 'error', error_code = ?2 WHERE id = ?1",
-                params![doc.0, code],
+                params![doc.0, reason.as_str()],
             )
         })?;
         Ok(())
@@ -369,10 +499,59 @@ mod tests {
             })
             .unwrap();
 
+        let file = db.chunk_file(chunk).unwrap().unwrap();
         assert_eq!(
-            db.chunk_file(chunk).unwrap(),
-            Some(("/root".to_owned(), "sub/a.txt".to_owned()))
+            (file.root.as_str(), file.rel_path.as_str(), file.enabled),
+            ("/root", "sub/a.txt", true)
         );
         assert_eq!(db.chunk_file(ChunkId(chunk.0 + 1)).unwrap(), None);
+        db.set_folder_enabled(file.folder_id, false).unwrap();
+        let doc = DocId(
+            db.read(|c| c.query_row("SELECT id FROM documents", [], |r| r.get(0)))
+                .unwrap(),
+        );
+        assert_eq!(
+            db.document_file(doc).unwrap().map(|f| f.enabled),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn failed_documents_list_their_reason_and_folder_counts_skipped() {
+        let (_dir, db) = temp_db();
+        let folder = db.upsert_folder("/root", "root").unwrap();
+        let doc = |rel: &str| db.insert_pending_document(folder, rel, "pdf").unwrap();
+        let (b, a, ok) = (doc("b.pdf"), doc("a.pdf"), doc("c.pdf"));
+        db.mark_error(b, FailReason::OcrFailed).unwrap();
+        db.mark_error(a, FailReason::Encrypted).unwrap();
+        // A code from before the reasons were split, or an unknown one, reads as parse_failed.
+        db.write(|c| {
+            c.execute(
+                "UPDATE documents SET status = 'error', error_code = 'old' WHERE id = ?1",
+                [ok.0],
+            )
+        })
+        .unwrap();
+        db.set_folder_skipped(folder, 4).unwrap();
+
+        let reasons: Vec<_> = db
+            .failed_documents(folder)
+            .unwrap()
+            .into_iter()
+            .map(|f| (f.rel_path, f.reason))
+            .collect();
+        assert_eq!(
+            reasons,
+            [
+                ("a.pdf".to_owned(), FailReason::Encrypted),
+                ("b.pdf".to_owned(), FailReason::OcrFailed),
+                ("c.pdf".to_owned(), FailReason::ParseFailed),
+            ]
+        );
+        let info = db.folder(folder).unwrap().unwrap();
+        assert_eq!(
+            (info.documents, info.failed, info.skipped, info.enabled),
+            (3, 3, 4, true)
+        );
     }
 }

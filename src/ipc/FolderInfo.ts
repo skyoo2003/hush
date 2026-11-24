@@ -5,8 +5,16 @@ export type FolderInfo = { id: number,
 /**
  * Canonical path, shown only to the user who chose it.
  */
-path: string, label: string, status: FolderStatus, documents: number, 
+path: string, label: string, status: FolderStatus, 
+/**
+ * A disabled folder is not watched or scanned, and its documents are left out of search.
+ */
+enabled: boolean, documents: number, 
 /**
  * Documents whose last index attempt failed.
  */
-failed: number, };
+failed: number, 
+/**
+ * Files the last full scan did not index: unsupported types and excluded files.
+ */
+skipped: number, };

@@ -8,4 +8,8 @@ shortcut: string,
 /**
  * False when another app holds the shortcut, so it does nothing.
  */
-shortcutRegistered: boolean, };
+shortcutRegistered: boolean, 
+/**
+ * gitignore lines, one per line, applied to every folder. Invalid lines are ignored.
+ */
+excludePatterns: string, };

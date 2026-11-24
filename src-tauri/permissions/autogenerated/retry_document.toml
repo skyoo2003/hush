@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-retry-document"
+description = "Enables the retry_document command without any pre-configured scope."
+commands.allow = ["retry_document"]
+
+[[permission]]
+identifier = "deny-retry-document"
+description = "Denies the retry_document command without any pre-configured scope."
+commands.deny = ["retry_document"]

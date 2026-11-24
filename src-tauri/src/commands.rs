@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use tauri_plugin_dialog::DialogExt;
@@ -15,15 +15,17 @@ use tauri_plugin_dialog::DialogExt;
 use crate::desktop::{self, ShortcutError};
 use crate::error::{AppError, ErrorCode};
 use crate::ingest::error::WatchError;
-use crate::ingest::queue::{IndexProgress, IndexQueue};
+use crate::ingest::queue::{IndexJob, IndexProgress, IndexQueue, Reason};
+use crate::ingest::scanner::EXCLUDES_SETTING;
 use crate::ingest::watcher::{self, AddedFolder, FolderWatcher};
 use crate::net;
 use crate::rag::hybrid::{self, SearchMode, SearchResults, SearchService};
 use crate::rag::query_parser;
+use crate::security::error::SecurityError;
 use crate::security::paths::ScopedPath;
 use crate::security::pii_guard;
-use crate::storage::db::{ChunkId, Db};
-use crate::storage::documents::FolderInfo;
+use crate::storage::db::{ChunkId, Db, DocId};
+use crate::storage::documents::{FailedDocument, FolderInfo};
 
 // Quick-search window set.
 
@@ -76,35 +78,53 @@ pub async fn search<R: Runtime>(
     .map_err(|_| AppError::internal("search task failed"))?
 }
 
-/// Opens the file behind a search hit in its default app. The webview passes only the chunk id.
-#[tauri::command]
-pub async fn open_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result<(), AppError> {
-    run_open(app, chunk_id, false).await
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum OpenMode {
+    /// In the file type's default app.
+    Open,
+    /// Selected in Finder.
+    Reveal,
 }
 
-/// Shows the file behind a search hit selected in Finder.
+/// Opens the file behind a search hit. The webview passes only the chunk id; the path comes
+/// from the DB and is checked again by `ScopedPath`, so a row pointing outside its folder is
+/// rejected. A missing file is queued for reindexing, which drops its document.
 #[tauri::command]
-pub async fn reveal_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result<(), AppError> {
-    run_open(app, chunk_id, true).await
-}
-
-async fn run_open<R: Runtime>(
+pub async fn open_source<R: Runtime>(
     app: AppHandle<R>,
     chunk_id: i64,
-    reveal: bool,
+    mode: OpenMode,
 ) -> Result<(), AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let db = app
             .try_state::<Arc<Db>>()
             .ok_or_else(|| AppError::internal("storage is not open"))?;
-        let (root, rel) = db
+        let file = db
             .chunk_file(ChunkId(chunk_id))
             .map_err(|_| AppError::internal("source could not be read"))?
             .ok_or_else(source_not_found)?;
-        let path =
-            ScopedPath::new(Path::new(&root), Path::new(&rel)).map_err(|_| source_not_found())?;
+        let path = match ScopedPath::new(Path::new(&file.root), Path::new(&file.rel_path)) {
+            Ok(path) => path,
+            Err(SecurityError::Unresolvable(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                if let Some(queue) = app.try_state::<Arc<IndexQueue>>() {
+                    queue.submit(IndexJob {
+                        folder_id: file.folder_id,
+                        root: Path::new(&file.root).into(),
+                        rel_path: file.rel_path,
+                        reason: Reason::Reindex,
+                    });
+                }
+                return Err(source_not_found());
+            }
+            Err(e) => {
+                tracing::warn!(chunk_id, error = %e, "source rejected");
+                return Err(source_not_found());
+            }
+        };
         let mut open = Command::new("/usr/bin/open");
-        if reveal {
+        if let OpenMode::Reveal = mode {
             open.arg("-R");
         }
         // The path is canonical and absolute, so `open` cannot read it as a flag.
@@ -222,6 +242,67 @@ pub async fn remove_watched_folder<R: Runtime>(app: AppHandle<R>, id: i64) -> Re
     .map_err(|_| AppError::internal("remove folder task failed"))?
 }
 
+/// Stops or resumes watching and indexing a folder; its documents stay but leave search.
+#[tauri::command]
+pub async fn set_folder_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    id: i64,
+    enabled: bool,
+) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app
+            .try_state::<Arc<Db>>()
+            .ok_or_else(|| AppError::internal("storage is not open"))?;
+        let watcher = app.try_state::<FolderWatcher>();
+        let queue = app.try_state::<Arc<IndexQueue>>();
+        watcher::set_folder_enabled(
+            &db,
+            watcher.as_deref(),
+            queue.as_deref().map(|q| &**q),
+            id,
+            enabled,
+        )
+        .map_err(folder_error)
+    })
+    .await
+    .map_err(|_| AppError::internal("folder toggle task failed"))?
+}
+
+#[tauri::command]
+pub fn list_failed_documents(
+    db: State<'_, Arc<Db>>,
+    folder_id: i64,
+) -> Result<Vec<FailedDocument>, AppError> {
+    db.failed_documents(folder_id)
+        .map_err(|_| AppError::internal("documents could not be read"))
+}
+
+/// Queues a failed document again. Does nothing for a disabled folder.
+#[tauri::command]
+pub fn retry_document<R: Runtime>(
+    app: AppHandle<R>,
+    db: State<'_, Arc<Db>>,
+    doc_id: i64,
+) -> Result<(), AppError> {
+    let queue = app
+        .try_state::<Arc<IndexQueue>>()
+        .ok_or_else(AppError::model_missing)?;
+    let file = db
+        .document_file(DocId(doc_id))
+        .map_err(|_| AppError::internal("document could not be read"))?
+        .ok_or_else(source_not_found)?;
+    if file.enabled {
+        // The worker checks the path with `ScopedPath` before reading it.
+        queue.submit(IndexJob {
+            folder_id: file.folder_id,
+            root: Path::new(&file.root).into(),
+            rel_path: file.rel_path,
+            reason: Reason::Reindex,
+        });
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +347,8 @@ pub struct Settings {
     pub shortcut: String,
     /// False when another app holds the shortcut, so it does nothing.
     pub shortcut_registered: bool,
+    /// gitignore lines, one per line, applied to every folder. Invalid lines are ignored.
+    pub exclude_patterns: String,
 }
 
 #[tauri::command]
@@ -275,7 +358,12 @@ pub fn get_settings<R: Runtime>(
     net: State<'_, net::Client>,
 ) -> Settings {
     let shortcut = desktop::saved_shortcut(&db);
+    let exclude_patterns = db.setting(EXCLUDES_SETTING).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "exclude patterns not read");
+        None
+    });
     Settings {
+        exclude_patterns: exclude_patterns.unwrap_or_default(),
         air_gap: net.guard().is_enabled(),
         shortcut_registered: desktop::is_registered(&app, &shortcut),
         shortcut,
@@ -315,6 +403,22 @@ pub fn set_shortcut<R: Runtime>(
         },
         ShortcutError::Storage(_) => AppError::internal("failed to save setting"),
     })?;
+    Ok(get_settings(app, db, net))
+}
+
+/// Saves the exclude patterns and rescans every enabled folder, which drops newly excluded
+/// documents and indexes newly included files.
+#[tauri::command]
+pub fn set_exclude_patterns<R: Runtime>(
+    app: AppHandle<R>,
+    patterns: String,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Result<Settings, AppError> {
+    db.set_setting(EXCLUDES_SETTING, &patterns)
+        .map_err(|_| AppError::internal("failed to save setting"))?;
+    let watcher = app.try_state::<FolderWatcher>();
+    watcher::rescan_enabled(&db, watcher.as_deref()).map_err(folder_error)?;
     Ok(get_settings(app, db, net))
 }
 

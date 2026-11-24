@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
@@ -42,6 +44,9 @@ pub struct ScanPlan {
     /// In the DB but not seen. Empty unless `complete`.
     pub delete: Vec<String>,
     pub unchanged: usize,
+    /// Files with an unsupported type or matching an exclude pattern. Files inside an
+    /// excluded directory are not walked, so they are not counted.
+    pub skipped: usize,
     /// Entries the walk could not read.
     pub failed: usize,
     /// No read errors, so every unseen document is really gone.
@@ -51,7 +56,7 @@ pub struct ScanPlan {
 /// Walks `root` (canonical) without following symlinks, skipping hidden entries, excluded
 /// patterns, and unsupported types, then diffs the files against `folder_id`'s documents.
 /// Documents are only listed for deletion after a walk with no read errors, so an
-/// unreadable subfolder never wipes its documents.
+/// unreadable subfolder never wipes its documents. Stores the skipped count on the folder.
 pub fn scan(
     db: &Db,
     registry: &ParserRegistry,
@@ -68,6 +73,8 @@ pub fn scan(
         complete: true,
         ..ScanPlan::default()
     };
+    let excluded = Arc::new(AtomicUsize::new(0));
+    let excluded_files = excluded.clone();
     let walk = WalkBuilder::new(root)
         .standard_filters(false)
         .hidden(true)
@@ -75,7 +82,11 @@ pub fn scan(
         .max_depth(Some(MAX_DEPTH))
         .filter_entry(move |e| {
             let is_dir = e.file_type().is_some_and(|t| t.is_dir());
-            !excludes.matched(e.path(), is_dir).is_ignore()
+            let excluded = excludes.matched(e.path(), is_dir).is_ignore();
+            if excluded && e.file_type().is_some_and(|t| t.is_file()) {
+                excluded_files.fetch_add(1, Ordering::Relaxed);
+            }
+            !excluded
         })
         .build();
     for entry in walk {
@@ -92,6 +103,7 @@ pub fn scan(
             continue;
         }
         if !supported(registry, entry.path()) {
+            plan.skipped += 1;
             continue;
         }
         let rel = entry
@@ -113,6 +125,8 @@ pub fn scan(
     if plan.complete {
         plan.delete = known.into_keys().collect();
     }
+    plan.skipped += excluded.load(Ordering::Relaxed);
+    db.set_folder_skipped(folder_id, plan.skipped)?;
     Ok(plan)
 }
 
@@ -254,6 +268,7 @@ mod tests {
             "keep/k.md",
             "drafts/d.txt",
             "keep/secret.md",
+            "notes.bin",
         ] {
             std::fs::write(root.join(f), "x").unwrap();
         }
@@ -264,6 +279,10 @@ mod tests {
         let reg = ParserRegistry::new();
         let plan = scan(&db, &reg, folder, &root).unwrap();
         assert_eq!(sorted(plan.new), ["a.txt", "keep/k.md"]);
+        // x.tmp, ~$lock.docx, dl.txt.part, keep/secret.md, plus the unsupported notes.bin;
+        // hidden files and files inside excluded directories are not counted.
+        assert_eq!(plan.skipped, 5);
+        assert_eq!(db.folder(folder).unwrap().unwrap().skipped, 5);
         // The watcher's filter agrees with the walk on every file.
         let filter = filter(&db, &root).unwrap();
         let mut admitted: Vec<String> = walkdir_files(&root)
@@ -313,6 +332,7 @@ mod tests {
                 reindex: vec!["edit.txt".into()],
                 delete: vec!["gone.txt".into()],
                 unchanged: 1,
+                skipped: 0,
                 failed: 0,
                 complete: true,
             }
