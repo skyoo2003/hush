@@ -10,7 +10,10 @@ import type { FailedDocument } from "../ipc/FailedDocument";
 import type { FolderInfo } from "../ipc/FolderInfo";
 import type { IndexProgress } from "../ipc/IndexProgress";
 import type { IndexStatus } from "../ipc/IndexStatus";
+import type { ScheduleSettings } from "../ipc/ScheduleSettings";
+import type { ScheduleStatus } from "../ipc/ScheduleStatus";
 import type { Settings } from "../ipc/Settings";
+import { fromTime, SCHEDULE_EVENT, scheduleText, toTime } from "../schedule";
 
 // Must match `ingest::queue::PROGRESS_EVENT`.
 const PROGRESS_EVENT = "index://progress";
@@ -25,6 +28,8 @@ function errorText(e: unknown): string {
 			return `${APP_NAME} cannot read that folder. Check its permissions.`;
 		case "model_missing":
 			return "Indexing is off until the embedding model is installed.";
+		case "schedule_invalid":
+			return "Pick two different times for the allowed hours.";
 		default:
 			return "Something went wrong. Try again.";
 	}
@@ -62,6 +67,7 @@ export function FolderAndSchedulePanel() {
 	const [failedDocs, setFailedDocs] = useState<FailedDocument[]>([]);
 	const [patterns, setPatterns] = useState("");
 	const [savedPatterns, setSavedPatterns] = useState("");
+	const [schedule, setSchedule] = useState<ScheduleStatus | null>(null);
 
 	const refresh = useCallback(() => {
 		invoke<FolderInfo[]>("list_folders").then(setFolders, () =>
@@ -88,13 +94,19 @@ export function FolderAndSchedulePanel() {
 			},
 			() => {},
 		);
+		const loadSchedule = () =>
+			invoke<ScheduleStatus>("get_schedule").then(setSchedule, () => {});
+		void loadSchedule();
 		// Counts change as documents finish, so the list refreshes with each progress event.
 		const unlisten = listen<IndexProgress>(PROGRESS_EVENT, (e) => {
 			setStatus({ indexing: true, progress: e.payload });
 			refresh();
 		});
+		// Re-read rather than use the payload: the tray's Pause also changes the settings.
+		const unlistenSchedule = listen(SCHEDULE_EVENT, () => void loadSchedule());
 		return () => {
 			void unlisten.then((f) => f());
+			void unlistenSchedule.then((f) => f());
 		};
 	}, [refresh]);
 
@@ -145,6 +157,23 @@ export function FolderAndSchedulePanel() {
 			setSavedPatterns(s.excludePatterns);
 			setNotice("Exclude patterns saved. Folders are being rescanned.");
 		});
+
+	const saveSchedule = (next: ScheduleSettings) =>
+		run(async () => {
+			setSchedule(
+				await invoke<ScheduleStatus>("set_schedule", { settings: next }),
+			);
+		});
+
+	const sched = schedule?.settings;
+	const setHour = (which: "startMinute" | "endMinute", value: string) => {
+		const minute = fromTime(value);
+		if (!sched?.allowedHours || minute === null) return;
+		void saveSchedule({
+			...sched,
+			allowedHours: { ...sched.allowedHours, [which]: minute },
+		});
+	};
 
 	return (
 		<section aria-labelledby="folders-heading">
@@ -253,6 +282,88 @@ export function FolderAndSchedulePanel() {
 			>
 				Save patterns
 			</button>
+			<h3 id="schedule-heading">Schedule</h3>
+			<p role="status" aria-labelledby="schedule-heading">
+				{scheduleText(schedule?.current ?? null)}
+			</p>
+			{sched && (
+				<>
+					<fieldset disabled={busy}>
+						<legend>Indexing</legend>
+						{(
+							[
+								["auto", "Automatic"],
+								["paused", "Paused"],
+								["run_now", "Index everything now"],
+							] as const
+						).map(([mode, label]) => (
+							<label key={mode}>
+								<input
+									type="radio"
+									name="schedule-mode"
+									checked={sched.mode === mode}
+									onChange={() => void saveSchedule({ ...sched, mode })}
+								/>{" "}
+								{label}
+							</label>
+						))}
+					</fieldset>
+					<fieldset disabled={busy}>
+						<legend>Allowed hours</legend>
+						<label>
+							<input
+								type="checkbox"
+								checked={sched.allowedHours !== null}
+								onChange={(e) =>
+									void saveSchedule({
+										...sched,
+										allowedHours: e.currentTarget.checked
+											? { startMinute: 22 * 60, endMinute: 7 * 60 }
+											: null,
+									})
+								}
+							/>{" "}
+							Only index between
+						</label>{" "}
+						{sched.allowedHours && (
+							<>
+								<input
+									type="time"
+									aria-label="Start time"
+									value={toTime(sched.allowedHours.startMinute)}
+									onChange={(e) =>
+										setHour("startMinute", e.currentTarget.value)
+									}
+								/>{" "}
+								and{" "}
+								<input
+									type="time"
+									aria-label="End time"
+									value={toTime(sched.allowedHours.endMinute)}
+									onChange={(e) => setHour("endMinute", e.currentTarget.value)}
+								/>
+							</>
+						)}
+					</fieldset>
+					<label>
+						On low battery, in Low Power Mode, or when your Mac is hot:{" "}
+						<select
+							disabled={busy}
+							value={sched.lowPower}
+							onChange={(e) =>
+								void saveSchedule({
+									...sched,
+									lowPower: e.currentTarget
+										.value as ScheduleSettings["lowPower"],
+								})
+							}
+						>
+							<option value="pause">Pause indexing</option>
+							<option value="one_worker">Keep going slowly</option>
+						</select>
+					</label>
+				</>
+			)}
 			{notice && <p>{notice}</p>}
 			{error && <p role="alert">{error}</p>}
 		</section>

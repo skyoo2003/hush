@@ -20,6 +20,8 @@ const COMMANDS: &[&str] = &[
     "retry_document",
     "set_exclude_patterns",
     "get_index_status",
+    "get_schedule",
+    "set_schedule",
     "get_settings",
     "set_air_gap",
     "set_shortcut",

@@ -6,7 +6,7 @@ Locite is a Tauri v2 app. A Rust backend (`src-tauri/`) does all the work, and a
 
 | Module | Job | Must not |
 | --- | --- | --- |
-| `ingest/` | Turns a file into a `ParsedDocument` and then `Vec<Chunk>`. Holds the scanner, the folder watcher, the index queue, the PDF and image parsers, OCR, and the chunker. | Touch the DB, except `ingest/pipeline.rs`, which calls `Db` methods. All SQL stays in `storage/`. |
+| `ingest/` | Turns a file into a `ParsedDocument` and then `Vec<Chunk>`. Holds the scanner, the folder watcher, the index queue and its scheduler, the PDF and image parsers, OCR, and the chunker. | Touch the DB, except `ingest/pipeline.rs`, which calls `Db` methods. All SQL stays in `storage/`. |
 | `rag/` | Embeddings, the vector store, hybrid search (vector + keyword + RRF), and later answer synthesis and `.locitepack`. | Touch the file system. |
 | `storage/` | The SQLCipher connection, migrations, FTS5, sqlite-vec, change history, and the keychain key. | Write anything outside the one encrypted DB. |
 | `security/` | `AirGapGuard`, `ScopedPath`, and the PII guard. | Depend on any other app module. |
@@ -50,7 +50,7 @@ flowchart TD
 ```
 
 1. The user picks a folder through the native picker. It is registered in the DB, and from then on `ScopedPath` allows reads only inside it, with no `..` and no symlink escapes.
-2. The scanner and the watcher submit index jobs. The queue parses, chunks, embeds, and commits each file. A file that changed or vanished during indexing is requeued or removed.
+2. The scanner and the watcher submit index jobs. The queue parses, chunks, embeds, and commits each file, at the pace the scheduler sets from search focus, power, idle time, and the user's schedule. A file that changed or vanished during indexing is requeued or removed.
 3. Search embeds the query locally, runs KNN and keyword search, fuses them with RRF, and returns hits that each carry their source. Queries are never stored or logged.
 
 ## Network boundary

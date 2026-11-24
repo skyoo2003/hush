@@ -73,6 +73,7 @@ pub struct BertEmbedder {
     /// From the catalog at load time; a reload must match it.
     weights_sha256: String,
     model: IdleSlot<BertModel>,
+    query_first: QueryFirst,
 }
 
 fn read_model_file(models_dir: &Path, id: &str, name: &str) -> Result<Vec<u8>, RagError> {
@@ -136,6 +137,7 @@ impl BertEmbedder {
             models_dir: models_dir.to_owned(),
             weights_sha256,
             model,
+            query_first: QueryFirst::default(),
         })
     }
 
@@ -148,10 +150,13 @@ impl BertEmbedder {
         build_model(data, &self.config)
     }
 
-    fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, RagError> {
+    fn embed(&self, texts: Vec<String>, passages: bool) -> Result<Vec<Vec<f32>>, RagError> {
         let model = self.model.get(|| self.reload_model())?;
         let mut out = Vec::with_capacity(texts.len());
         for batch in texts.chunks(BATCH) {
+            if passages {
+                self.query_first.wait_for_queries();
+            }
             let enc = self
                 .tokenizer
                 .encode_batch(batch.to_vec(), true)
@@ -192,12 +197,13 @@ impl Embedder for BertEmbedder {
 
     fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, RagError> {
         let p = self.spec.passage_prefix;
-        self.embed(texts.iter().map(|t| format!("{p}{t}")).collect())
+        self.embed(texts.iter().map(|t| format!("{p}{t}")).collect(), true)
     }
 
     fn embed_query(&self, text: &str) -> Result<Vec<f32>, RagError> {
         let q = format!("{}{text}", self.spec.query_prefix);
-        Ok(self.embed(vec![q])?.pop().unwrap_or_default())
+        let _turn = self.query_first.query();
+        Ok(self.embed(vec![q], false)?.pop().unwrap_or_default())
     }
 }
 
@@ -315,6 +321,45 @@ impl<T> Drop for IdleSlot<T> {
     }
 }
 
+/// Passage batches wait while any query embeds, so a search never queues behind indexing.
+/// A batch already running finishes first.
+#[derive(Default)]
+struct QueryFirst {
+    queries: Mutex<usize>,
+    none: Condvar,
+}
+
+/// Held while a query embeds.
+struct QueryTurn<'a>(&'a QueryFirst);
+
+impl QueryFirst {
+    fn lock(&self) -> MutexGuard<'_, usize> {
+        self.queries.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn query(&self) -> QueryTurn<'_> {
+        *self.lock() += 1;
+        QueryTurn(self)
+    }
+
+    fn wait_for_queries(&self) {
+        let mut n = self.lock();
+        while *n > 0 {
+            n = self.none.wait(n).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+}
+
+impl Drop for QueryTurn<'_> {
+    fn drop(&mut self) {
+        let mut n = self.0.lock();
+        *n -= 1;
+        if *n == 0 {
+            self.0.none.notify_all();
+        }
+    }
+}
+
 pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -370,6 +415,28 @@ mod tests {
     const RELATED: &str = "Either party may end this agreement with thirty days written notice if the other party materially breaches the contract.";
     const UNRELATED: &str =
         "Hold the small button on the back of the router for ten seconds until the lights blink.";
+
+    #[test]
+    fn passages_wait_until_every_query_finishes() {
+        let gate = Arc::new(QueryFirst::default());
+        let (a, b) = (gate.query(), gate.query());
+        let passed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let waiter = {
+            let (gate, passed) = (gate.clone(), passed.clone());
+            std::thread::spawn(move || {
+                gate.wait_for_queries();
+                passed.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        drop(a);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!passed.load(std::sync::atomic::Ordering::SeqCst));
+        drop(b);
+        waiter.join().unwrap();
+        assert!(passed.load(std::sync::atomic::Ordering::SeqCst));
+        gate.wait_for_queries();
+    }
 
     fn dot(a: &[f32], b: &[f32]) -> f32 {
         a.iter().zip(b).map(|(x, y)| x * y).sum()

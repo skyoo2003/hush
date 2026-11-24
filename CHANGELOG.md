@@ -12,5 +12,6 @@ All notable changes to Locite are recorded here. The format follows [Keep a Chan
 - Document ingestion: PDF and image parsing, OCR through macOS Vision, chunking, and SHA-256 change detection.
 - Local embeddings (bge-small-en-v1.5 by default) and hybrid search (vector + keyword, fused by RRF).
 - Folder scanner, index queue, and folder watcher with incremental reindexing.
+- Index scheduler: indexing yields to search, slows on low battery, Low Power Mode, or heat, speeds up when you are away, and follows Pause, Run now, and allowed hours (Folders panel and tray).
 - Model manager: a built-in catalog with pinned SHA-256s, resumable downloads that Air-Gap refuses or stops, and manual import for offline machines (Security panel).
 - Repository governance: GPL-3.0-or-later license, contribution guide with DCO, security policy, trademark policy, and CI checks for licenses, advisories, SPDX headers, DCO sign-off, and secrets.

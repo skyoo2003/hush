@@ -13,7 +13,8 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime, 
 use tauri_plugin_global_shortcut::{GlobalShortcut, GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::brand;
-use crate::ingest::queue::{IndexProgress, IndexQueue};
+use crate::ingest::queue::IndexProgress;
+use crate::ingest::scheduler::{Current, Mode, Reason, SchedState, Scheduler};
 use crate::storage::db::Db;
 use crate::storage::error::StorageError;
 
@@ -225,6 +226,7 @@ fn quick_search_origin(
 
 struct Tray<R: Runtime> {
     index: MenuItem<R>,
+    schedule: MenuItem<R>,
     pause: MenuItem<R>,
     air_gap: MenuItem<R>,
 }
@@ -233,6 +235,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let item =
         |id: &str, text: &str, enabled| MenuItem::with_id(app, id, text, enabled, None::<&str>);
     let index = item("index", &index_label(None), false)?;
+    let schedule = item("schedule", &schedule_label(None), false)?;
     let pause = item("pause", "Pause Indexing", false)?;
     let air_gap = item("air_gap", "Air-Gap: On", false)?;
     let sponsors = brand::SPONSOR_URLS
@@ -254,6 +257,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             &item("search", "Search", true)?,
             &PredefinedMenuItem::separator(app)?,
             &index,
+            &schedule,
             &pause,
             &air_gap,
             &PredefinedMenuItem::separator(app)?,
@@ -273,6 +277,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     tray.build(app)?;
     app.manage(Tray {
         index,
+        schedule,
         pause,
         air_gap,
     });
@@ -285,13 +290,21 @@ fn on_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
         "settings" => show_main(app),
         "quit" => app.exit(0),
         "pause" => {
-            if let Some(q) = app.try_state::<Arc<IndexQueue>>() {
-                // The queue emits progress on change, which relabels this item.
-                if q.progress().paused {
-                    q.resume();
-                } else {
-                    q.pause();
-                }
+            let (Some(s), Some(db)) = (
+                app.try_state::<Arc<Scheduler>>(),
+                app.try_state::<Arc<Db>>(),
+            ) else {
+                return;
+            };
+            let mut settings = s.settings();
+            settings.mode = if settings.mode == Mode::Paused {
+                Mode::Auto
+            } else {
+                Mode::Paused
+            };
+            // The scheduler reports the change, which relabels this item.
+            if let Err(e) = s.change(&db, settings) {
+                tracing::warn!(error = %e, "schedule not saved");
             }
         }
         _ => {
@@ -313,13 +326,51 @@ pub fn set_tray_index<R: Runtime>(app: &AppHandle<R>, progress: Option<IndexProg
         return;
     };
     let _ = tray.index.set_text(index_label(progress));
-    let paused = progress.is_some_and(|p| p.paused);
-    let _ = tray.pause.set_text(if paused {
+}
+
+/// Called with each scheduler decision. `None` until indexing starts.
+pub fn set_tray_schedule<R: Runtime>(app: &AppHandle<R>, current: Option<Current>) {
+    let Some(tray) = app.try_state::<Tray<R>>() else {
+        return;
+    };
+    let _ = tray.schedule.set_text(schedule_label(current));
+    let user_paused = current.is_some_and(|c| c.reason == Reason::UserPaused);
+    let _ = tray.pause.set_text(if user_paused {
         "Resume Indexing"
     } else {
         "Pause Indexing"
     });
-    let _ = tray.pause.set_enabled(progress.is_some());
+    let _ = tray.pause.set_enabled(current.is_some());
+}
+
+fn schedule_label(current: Option<Current>) -> String {
+    let Some(c) = current else {
+        return "Schedule: not started".into();
+    };
+    let state = match c.state {
+        SchedState::Paused => "Paused",
+        SchedState::RunNow => "Running now",
+        SchedState::LowPower => "Low power",
+        SchedState::Interactive => "Interactive",
+        SchedState::Idle => "Idle",
+        SchedState::Normal => "Normal",
+    };
+    let why = match c.reason {
+        Reason::UserPaused => "paused by you",
+        Reason::UserRunNow => "run now",
+        Reason::OutsideHours => "outside allowed hours",
+        Reason::Thermal => "Mac is hot",
+        Reason::LowPowerMode => "Low Power Mode",
+        Reason::LowBattery => "battery low",
+        Reason::Searching => "searching",
+        Reason::UserIdle => "you are away",
+        Reason::Default => "",
+    };
+    if why.is_empty() {
+        format!("Schedule: {state}")
+    } else {
+        format!("Schedule: {state} ({why})")
+    }
 }
 
 pub fn set_tray_air_gap<R: Runtime>(app: &AppHandle<R>, on: bool) {

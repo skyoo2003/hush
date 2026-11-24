@@ -632,3 +632,21 @@ Run-to-run spread was below 1% for every number (stddev at most 2 t/s on pp, 0.3
 
 - Answer quality and how well each model follows citations. That needs the synthesizer and an eval in the style of `eval/`. Rerun this table against that eval before shipping.
 - A real 8 GB machine, and a llama.cpp binding inside the app (its crate and license go in a new ADR).
+
+## ADR-019. Index scheduler
+
+- Date: 2026-11-25
+- Status: Accepted
+
+### Decision
+
+- `ingest::scheduler` turns signals into one `Reason`, and the reason into a `Plan { parse_workers, embedding }` that `scheduler::apply` runs on the `IndexQueue`. `decide` and `plan` are pure functions with table tests. A `Reason` maps to exactly one state, so a state and a reason that disagree cannot be represented.
+- Precedence, first match wins: user Paused, user Run now, outside allowed hours, thermal serious or worse, Low Power Mode, on battery at 20% or less, search open (Interactive), 5 minutes without input (Idle), else Normal. Manual controls beat everything, including allowed hours. Low power beats Interactive, so a search on a low battery never starts work the user asked to stop.
+- Plans, with `max` the parse workers spawned (`cores / 2`): Paused and outside hours run nothing (the queue is paused, so progress reads "paused"); Run now and Idle run `max` with embedding; Normal runs `max / 2` (at least 1) with embedding; Interactive runs 1 parse worker with embedding held; LowPower runs nothing or 1 worker with embedding, per the `low_power` setting. Charging at a low charge is not low power.
+- Query first. `IndexQueue::set_embedding(false)` holds parsed documents before the embedder. Inside `BertEmbedder`, passage batches wait while any query embeds (`QueryFirst`), so a document that was already embedding when search opened yields between batches of 32.
+- Signals: `search://focus` events are sent to the scheduler thread at once; power, idle time, and the local clock are polled every 5 s and on each event. Power is IOKit `IOPSCopyPowerSourcesInfo` (internal battery state and charge) and `NSProcessInfo` (`isLowPowerModeEnabled`, `thermalState`). Idle is `CGEventSourceSecondsSinceLastEventType`. It needs no Accessibility permission: an ad-hoc signed app bundle with `AXIsProcessTrusted() == false` read live values that matched IOKit's `HIDIdleTime`. Allowed hours use `NSCalendar` local time.
+- Settings (`mode`, `allowedHours`, `lowPower`) are JSON in the `index_schedule` setting. Invalid saved JSON falls back to the defaults; `set_schedule` rejects an empty or out-of-range time range with `schedule_invalid`. The tray's Pause item now toggles the saved mode, so the panel, the tray, and a relaunch agree.
+
+### New crates
+
+None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate`, `NSEnumerator`, `NSProcessInfo`) and `objc2-core-graphics` (`CGEventSource`, `CGEventTypes`). IOKit's three power-source functions are declared in `ingest/scheduler/macos.rs`. No network use.

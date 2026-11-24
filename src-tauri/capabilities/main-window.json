@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "Main window: folders and index progress, settings, Air-Gap toggle, models, pack export.",
+  "description": "Main window: folders, index progress and schedule, settings, Air-Gap toggle, models, pack export.",
   "windows": ["main"],
   "permissions": [
     "allow-list-folders",
@@ -12,6 +12,8 @@
     "allow-retry-document",
     "allow-set-exclude-patterns",
     "allow-get-index-status",
+    "allow-get-schedule",
+    "allow-set-schedule",
     "allow-get-settings",
     "allow-set-air-gap",
     "allow-set-shortcut",
