@@ -123,6 +123,19 @@ impl Db {
         })?;
         Ok(())
     }
+
+    /// Adds one to `counters.search_count`, the only usage number kept (it drives the sponsor
+    /// milestone). The query itself is never stored.
+    pub fn increment_search_count(&self) -> Result<(), StorageError> {
+        self.write(|c| {
+            c.execute(
+                "INSERT INTO counters(key, value) VALUES ('search_count', 1)
+                 ON CONFLICT(key) DO UPDATE SET value = value + 1",
+                [],
+            )
+        })?;
+        Ok(())
+    }
 }
 
 fn lock(m: &Mutex<Connection>) -> MutexGuard<'_, Connection> {
@@ -465,6 +478,18 @@ pub(crate) mod tests {
         db.set_setting("k", "1").unwrap();
         db.set_setting("k", "2").unwrap();
         assert_eq!(db.setting("k").unwrap().as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn search_count_increments_and_is_the_only_counter() {
+        let (_dir, db) = temp_db();
+        db.increment_search_count().unwrap();
+        db.increment_search_count().unwrap();
+        assert_eq!(
+            count(&db, "SELECT value FROM counters WHERE key = 'search_count'"),
+            2
+        );
+        assert_eq!(count(&db, "SELECT count(*) FROM counters"), 1);
     }
 
     #[test]

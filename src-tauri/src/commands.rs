@@ -18,9 +18,10 @@ use crate::ingest::error::WatchError;
 use crate::ingest::queue::{IndexProgress, IndexQueue};
 use crate::ingest::watcher::{self, AddedFolder, FolderWatcher};
 use crate::net;
-use crate::rag::hybrid::{SearchMode, SearchResults, SearchService};
-use crate::rag::vector_store::SearchFilter;
+use crate::rag::hybrid::{self, SearchMode, SearchResults, SearchService};
+use crate::rag::query_parser;
 use crate::security::paths::ScopedPath;
+use crate::security::pii_guard;
 use crate::storage::db::{ChunkId, Db};
 use crate::storage::documents::FolderInfo;
 
@@ -34,6 +35,7 @@ pub async fn search<R: Runtime>(
     app: AppHandle<R>,
     query: String,
     limit: Option<u32>,
+    utc_offset_minutes: Option<i32>,
 ) -> Result<SearchResults, AppError> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as usize;
     // Each search means the user is typing; the indexer yields while they do.
@@ -45,22 +47,30 @@ pub async fn search<R: Runtime>(
         let db = app
             .try_state::<Arc<Db>>()
             .ok_or_else(|| AppError::internal("storage is not open"))?;
-        service
-            .search(
-                &db,
-                &query,
-                SearchMode::Hybrid,
-                &SearchFilter::default(),
-                limit,
-            )
-            .map_err(|e| {
-                // RagError messages are fixed and carry no query text.
-                tracing::warn!(error = %e, "search failed");
-                AppError {
-                    code: ErrorCode::SearchFailed,
-                    message: "search failed".into(),
-                }
-            })
+        let parsed = query_parser::parse(&query);
+        let folders = db
+            .folders()
+            .map_err(|_| AppError::internal("folders could not be read"))?;
+        let mut results = match parsed.filter(&folders, utc_offset_minutes.unwrap_or(0)) {
+            Some(filter) => service
+                .search(&db, &parsed.text, SearchMode::Hybrid, &filter, limit)
+                .map_err(|e| {
+                    // RagError messages are fixed and carry no query text.
+                    tracing::warn!(error = %e, "search failed");
+                    AppError {
+                        code: ErrorCode::SearchFailed,
+                        message: "search failed".into(),
+                    }
+                })?,
+            None => SearchResults::default(),
+        };
+        if !parsed.text.trim().is_empty() {
+            if let Err(e) = db.increment_search_count() {
+                tracing::warn!(error = %e, "search count not saved");
+            }
+        }
+        results.filters = parsed.filters;
+        Ok(results)
     })
     .await
     .map_err(|_| AppError::internal("search task failed"))?
@@ -69,6 +79,20 @@ pub async fn search<R: Runtime>(
 /// Opens the file behind a search hit in its default app. The webview passes only the chunk id.
 #[tauri::command]
 pub async fn open_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result<(), AppError> {
+    run_open(app, chunk_id, false).await
+}
+
+/// Shows the file behind a search hit selected in Finder.
+#[tauri::command]
+pub async fn reveal_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result<(), AppError> {
+    run_open(app, chunk_id, true).await
+}
+
+async fn run_open<R: Runtime>(
+    app: AppHandle<R>,
+    chunk_id: i64,
+    reveal: bool,
+) -> Result<(), AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let db = app
             .try_state::<Arc<Db>>()
@@ -79,11 +103,12 @@ pub async fn open_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result
             .ok_or_else(source_not_found)?;
         let path =
             ScopedPath::new(Path::new(&root), Path::new(&rel)).map_err(|_| source_not_found())?;
+        let mut open = Command::new("/usr/bin/open");
+        if reveal {
+            open.arg("-R");
+        }
         // The path is canonical and absolute, so `open` cannot read it as a flag.
-        let ok = Command::new("/usr/bin/open")
-            .arg(path.as_path())
-            .status()
-            .is_ok_and(|s| s.success());
+        let ok = open.arg(path.as_path()).status().is_ok_and(|s| s.success());
         if ok {
             Ok(())
         } else {
@@ -94,10 +119,20 @@ pub async fn open_source<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result
     .map_err(|_| AppError::internal("open source task failed"))?
 }
 
-/// Puts `text` on the clipboard. The webview formats it from the hit it shows.
+/// Puts `[file name, p.X] "excerpt"` for a hit on the clipboard, formatted here from the chunk.
 #[tauri::command]
-pub async fn copy_citation(text: String) -> Result<(), AppError> {
+pub async fn copy_citation<R: Runtime>(app: AppHandle<R>, chunk_id: i64) -> Result<(), AppError> {
     tauri::async_runtime::spawn_blocking(move || {
+        let db = app
+            .try_state::<Arc<Db>>()
+            .ok_or_else(|| AppError::internal("storage is not open"))?;
+        let id = ChunkId(chunk_id);
+        let detail = db
+            .chunk_details(&[id])
+            .map_err(|_| AppError::internal("source could not be read"))?
+            .remove(&id)
+            .ok_or_else(source_not_found)?;
+        let text = pii_guard::before_copy(hybrid::citation(&detail));
         pbcopy(&text).map_err(|_| AppError {
             code: ErrorCode::ClipboardFailed,
             message: "citation could not be copied".into(),

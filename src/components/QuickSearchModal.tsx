@@ -1,35 +1,70 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { type MessageKey, t } from "../i18n";
 import type { AppError } from "../ipc/AppError";
+import type { IndexProgress } from "../ipc/IndexProgress";
+import type { IndexStatus } from "../ipc/IndexStatus";
 import type { SearchHit } from "../ipc/SearchHit";
 import type { SearchResults } from "../ipc/SearchResults";
-import { formatCitation, splitHighlights } from "../search";
+import {
+  createSearcher,
+  keyCommand,
+  moveSelection,
+  type SearchUpdate,
+} from "../search";
+import { SearchResultCard } from "./SearchResultCard";
 
-const DEBOUNCE_MS = 150;
+// Must match `ingest::queue::PROGRESS_EVENT`.
+const PROGRESS_EVENT = "index://progress";
 
-function errorText(e: unknown): string {
+function errorKey(e: unknown): MessageKey {
   switch ((e as Partial<AppError>)?.code) {
     case "model_missing":
-      return "Search is off until the embedding model is installed.";
+      return "search.modelMissing";
     case "source_not_found":
-      return "That file was moved or deleted. It drops out after the next scan.";
+      return "search.sourceNotFound";
     case "clipboard_failed":
-      return "Could not copy the citation.";
+      return "search.clipboardFailed";
     default:
-      return "Something went wrong. Try again.";
+      return "search.failed";
   }
 }
 
+const runSearch = (query: string) =>
+  invoke<SearchResults>("search", {
+    query,
+    utcOffsetMinutes: -new Date().getTimezoneOffset(),
+  });
+
 export function QuickSearchModal() {
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [update, setUpdate] = useState<SearchUpdate<SearchResults>>({
+    kind: "idle",
+  });
   const [selected, setSelected] = useState(0);
+  const [pending, setPending] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Only the newest request may set results; slower older ones are dropped.
-  const seq = useRef(0);
+  const [actionError, setActionError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+
+  const searcher = useMemo(
+    () =>
+      createSearcher(runSearch, (u) => {
+        setUpdate(u);
+        setSelected(0);
+      }),
+    [],
+  );
+  useEffect(() => searcher.set(query), [searcher, query]);
+  useEffect(() => () => searcher.cancel(), [searcher]);
 
   // The window is created once and shown on each shortcut; select the last query so typing replaces it.
   useEffect(() => {
@@ -39,29 +74,22 @@ export function QuickSearchModal() {
   }, []);
 
   useEffect(() => {
-    const mine = ++seq.current;
-    if (!query.trim()) {
-      setHits(null);
-      setError(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      invoke<SearchResults>("search", { query }).then(
-        (r) => {
-          if (mine !== seq.current) return;
-          setHits(r.hits);
-          setSelected(0);
-          setError(null);
-        },
-        (e) => {
-          if (mine !== seq.current) return;
-          setHits(null);
-          setError(errorText(e));
-        },
-      );
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
+    const count = (p: IndexProgress) => p.queued + p.running;
+    invoke<IndexStatus>("get_index_status").then(
+      (s) => setPending(count(s.progress)),
+      () => {},
+    );
+    const unlisten = listen<IndexProgress>(PROGRESS_EVENT, (e) =>
+      setPending(count(e.payload)),
+    );
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, []);
+
+  const results = update.kind === "done" ? update.result : null;
+  const hits = results?.hits ?? [];
+  const current: SearchHit | undefined = hits[selected];
 
   const hide = () => {
     setQuery("");
@@ -69,39 +97,48 @@ export function QuickSearchModal() {
     void invoke("hide_window");
   };
 
-  const open = async (hit: SearchHit) => {
+  const act = async (
+    cmd: "open_source" | "reveal_source" | "copy_citation",
+    hit: SearchHit,
+  ) => {
     try {
-      await invoke("open_source", { chunkId: hit.chunkId });
-      hide();
+      await invoke(cmd, { chunkId: hit.chunkId });
+      setActionError(null);
+      if (cmd === "open_source") hide();
+      if (cmd === "copy_citation") setStatus(t("search.copied"));
     } catch (e) {
-      setError(errorText(e));
-    }
-  };
-
-  const copy = async (hit: SearchHit) => {
-    try {
-      await invoke("copy_citation", { text: formatCitation(hit) });
-      setStatus("Citation copied.");
-    } catch (e) {
-      setError(errorText(e));
+      setActionError(t(errorKey(e)));
     }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    const current = hits?.[selected];
-    if (e.key === "Escape") {
-      hide();
-    } else if (e.key === "ArrowDown" && hits?.length) {
+    const el = e.currentTarget;
+    const cmd = keyCommand(
+      {
+        key: e.key,
+        metaKey: e.metaKey,
+        isComposing: e.nativeEvent.isComposing,
+      },
+      el.selectionStart !== el.selectionEnd,
+    );
+    if (cmd === "close") return hide();
+    if (cmd === "up" || cmd === "down") {
       e.preventDefault();
-      setSelected((i) => Math.min(i + 1, hits.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelected((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter" && current) {
-      e.preventDefault();
-      void (e.metaKey ? copy(current) : open(current));
+      setSelected((i) => moveSelection(i, cmd, hits.length));
+      return;
     }
+    if (!cmd || !current) return;
+    e.preventDefault();
+    const ipc = {
+      open: "open_source",
+      reveal: "reveal_source",
+      copy: "copy_citation",
+    } as const;
+    void act(ipc[cmd], current);
   };
+
+  const error =
+    update.kind === "error" ? t(errorKey(update.error)) : actionError;
 
   return (
     <main className="quick-search">
@@ -109,54 +146,56 @@ export function QuickSearchModal() {
         ref={input}
         type="search"
         role="combobox"
-        aria-expanded={!!hits?.length}
-        aria-label="Search"
+        aria-expanded={hits.length > 0}
+        aria-label={t("search.label")}
         aria-controls="results"
-        aria-activedescendant={hits?.length ? `hit-${selected}` : undefined}
+        aria-activedescendant={current ? `hit-${selected}` : undefined}
+        placeholder={t("search.placeholder")}
         // biome-ignore lint/a11y/noAutofocus: the quick-search window exists only for this input
         autoFocus
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
           setStatus(null);
+          setActionError(null);
         }}
         onKeyDown={onKeyDown}
       />
+      {results && results.filters.length > 0 && (
+        <ul aria-label={t("search.filters")}>
+          {results.filters.map((f) => (
+            <li key={`${f.key}:${f.value}`}>
+              {t(`filter.${f.key}`)}: {f.value}
+            </li>
+          ))}
+        </ul>
+      )}
       {error && <p role="alert">{error}</p>}
-      {hits?.length === 0 && <p>No matching passages in your folders.</p>}
-      {hits && hits.length > 0 && (
+      {!query.trim() && <p>{t("search.hint")}</p>}
+      {pending > 0 && query.trim() && (
+        <p>{t("search.indexing", { count: pending })}</p>
+      )}
+      {results && hits.length === 0 && <p>{t("search.noResults")}</p>}
+      {hits.length > 0 && (
         <>
-          <div id="results" role="listbox" aria-label="Results">
+          <div id="results" role="listbox" aria-label={t("search.results")}>
             {hits.map((hit, i) => (
-              // Keys go through the input (aria-activedescendant); a click opens the source.
-              // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handled by the search input
-              <div
+              <SearchResultCard
                 key={hit.chunkId}
                 id={`hit-${i}`}
-                role="option"
-                aria-selected={i === selected}
-                tabIndex={-1}
-                style={i === selected ? { outline: "2px solid Highlight" } : undefined}
-                onClick={() => void open(hit)}
-                onMouseEnter={() => setSelected(i)}
-              >
-                <strong>{hit.fileName}</strong>{" "}
-                <small>
-                  {hit.folderLabel}/{hit.relPath}
-                  {hit.page !== null && `, p. ${hit.page}`}
-                </small>
-                <p>
-                  {splitHighlights(hit.snippet, hit.highlights).map((s, j) =>
-                    // biome-ignore lint/suspicious/noArrayIndexKey: segments are static per render
-                    s.match ? <mark key={j}>{s.text}</mark> : <span key={j}>{s.text}</span>,
-                  )}
-                </p>
-              </div>
+                hit={hit}
+                selected={i === selected}
+                onOpen={() => void act("open_source", hit)}
+                onHover={() => setSelected(i)}
+              />
             ))}
           </div>
           <p>
-            <kbd>Enter</kbd> open · <kbd>⌘</kbd>
-            <kbd>Enter</kbd> copy citation · <kbd>Esc</kbd> close
+            <kbd>↑↓</kbd> · <kbd>Enter</kbd> {t("search.keys.open")} ·{" "}
+            <kbd>⌘</kbd>
+            <kbd>Enter</kbd> {t("search.keys.reveal")} · <kbd>⌘</kbd>
+            <kbd>C</kbd> {t("search.keys.copy")} · <kbd>Esc</kbd>{" "}
+            {t("search.keys.close")}
           </p>
         </>
       )}
