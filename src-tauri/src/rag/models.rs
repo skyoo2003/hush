@@ -134,6 +134,14 @@ impl ModelManager {
     }
 
     fn with_catalog(dir: PathBuf, catalog: &'static [CatalogModel]) -> Self {
+        // An import that crashed mid-copy leaves its temp file; no import is running yet.
+        for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(".import-") && name.ends_with(".part") {
+                let _ = fs::remove_file(e.path());
+            }
+        }
         Self {
             dir,
             catalog,
@@ -720,6 +728,21 @@ mod tests {
         assert!(!mgr.is_installed(ID));
         assert!(dir.path().join(ID).join("f.bin.part").exists());
         assert!(!mgr.cancel(ID), "no download is running");
+    }
+
+    #[test]
+    fn a_new_manager_removes_import_temp_files_left_by_a_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = dir.path().join(".import-3.part");
+        let download_part = dir.path().join("keep.bin.part");
+        fs::write(&stale, b"half").unwrap();
+        fs::write(&download_part, b"resume me").unwrap();
+        ModelManager::with_catalog(dir.path().into(), catalog(1, &content()));
+        assert!(!stale.exists());
+        assert!(
+            download_part.exists(),
+            "download parts resume, so they stay"
+        );
     }
 
     #[test]
