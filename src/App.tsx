@@ -5,6 +5,7 @@ import { FolderAndSchedulePanel } from "./components/FolderAndSchedulePanel";
 import { QuickSearchModal } from "./components/QuickSearchModal";
 import { SecurityPanel } from "./components/SecurityPanel";
 import { ShortcutSetting } from "./components/ShortcutSetting";
+import { t } from "./i18n";
 
 // Both windows load index.html; the window label picks the UI.
 const label = getCurrentWindow().label;
@@ -20,9 +21,9 @@ export function App() {
 			<ShortcutSetting />
 			<SecurityPanel />
 			<section aria-labelledby="sponsor-heading">
-				<h2 id="sponsor-heading">Sponsor</h2>
+				<h2 id="sponsor-heading">{t("main.sponsor")}</h2>
 				{/* shortcut: placeholder until the sponsor feature (badge, theme) is built. */}
-				<p>Coming soon.</p>
+				<p>{t("main.sponsorSoon")}</p>
 			</section>
 		</main>
 	);

@@ -3,9 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { APP_NAME } from "../brand";
+import { t } from "../i18n";
 import type { AddedFolder } from "../ipc/AddedFolder";
 import type { AppError } from "../ipc/AppError";
-import type { FailReason } from "../ipc/FailReason";
 import type { FailedDocument } from "../ipc/FailedDocument";
 import type { FolderInfo } from "../ipc/FolderInfo";
 import type { IndexProgress } from "../ipc/IndexProgress";
@@ -21,38 +21,35 @@ const PROGRESS_EVENT = "index://progress";
 function errorText(e: unknown): string {
 	switch ((e as Partial<AppError>)?.code) {
 		case "folder_overlap":
-			return "That folder is already watched, or is inside or contains a watched folder.";
+			return t("folders.error.overlap");
 		case "folder_not_found":
-			return "That folder no longer exists.";
+			return t("folders.error.notFound");
 		case "folder_unreadable":
-			return `${APP_NAME} cannot read that folder. Check its permissions.`;
+			return t("folders.error.unreadable", { app: APP_NAME });
 		case "model_missing":
-			return "Indexing is off until the embedding model is installed.";
+			return t("folders.error.modelMissing");
 		case "schedule_invalid":
-			return "Pick two different times for the allowed hours.";
+			return t("folders.error.scheduleInvalid");
 		default:
-			return "Something went wrong. Try again.";
+			return t("error.generic");
 	}
 }
 
-const REASONS: Record<FailReason, string> = {
-	encrypted: "Encrypted PDF",
-	corrupted: "Corrupted",
-	too_large: "Too large",
-	ocr_failed: "OCR failed",
-	read_failed: "Could not be read",
-	embed_failed: "Embedding failed",
-	parse_failed: "Could not be parsed",
-};
-
 function progressText(indexing: boolean, p: IndexProgress | null): string {
-	if (!indexing || !p) return "Indexing starts once the embedding model loads.";
-	if (p.paused) return "Indexing paused.";
+	if (!indexing || !p) return t("folders.progress.waiting");
+	if (p.paused) return t("folders.progress.paused");
 	const pending = p.queued + p.running;
-	const failed = p.failed ? `, ${p.failed} failed` : "";
-	return pending
-		? `Indexing: ${pending} left, ${p.done} done${failed}.`
-		: `Up to date${failed}.`;
+	if (!pending)
+		return p.failed
+			? t("folders.progress.upToDateFailed", { failed: p.failed })
+			: t("folders.progress.upToDate");
+	return p.failed
+		? t("folders.progress.runningFailed", {
+				pending,
+				done: p.done,
+				failed: p.failed,
+			})
+		: t("folders.progress.running", { pending, done: p.done });
 }
 
 export function FolderAndSchedulePanel() {
@@ -71,7 +68,7 @@ export function FolderAndSchedulePanel() {
 
 	const refresh = useCallback(() => {
 		invoke<FolderInfo[]>("list_folders").then(setFolders, () =>
-			setError("Could not read the folder list."),
+			setError(t("folders.listFailed")),
 		);
 	}, []);
 
@@ -81,7 +78,7 @@ export function FolderAndSchedulePanel() {
 		if (errorsOf === null || openFailed === undefined) return;
 		invoke<FailedDocument[]>("list_failed_documents", {
 			folderId: errorsOf,
-		}).then(setFailedDocs, () => setError("Could not read the error list."));
+		}).then(setFailedDocs, () => setError(t("folders.errorListFailed")));
 	}, [errorsOf, openFailed]);
 
 	useEffect(() => {
@@ -128,7 +125,7 @@ export function FolderAndSchedulePanel() {
 		run(async () => {
 			const added = await invoke<AddedFolder | null>("add_watched_folder");
 			if (added?.warning === "broad_path") {
-				setNotice("This is a large folder. Indexing it may take a while.");
+				setNotice(t("folders.broadPath"));
 			}
 		});
 
@@ -147,7 +144,7 @@ export function FolderAndSchedulePanel() {
 	const retry = (d: FailedDocument) =>
 		run(async () => {
 			await invoke("retry_document", { docId: d.docId });
-			setNotice(`Queued ${d.relPath} again.`);
+			setNotice(t("folders.retryQueued", { path: d.relPath }));
 		});
 
 	const savePatterns = () =>
@@ -155,7 +152,7 @@ export function FolderAndSchedulePanel() {
 			const s = await invoke<Settings>("set_exclude_patterns", { patterns });
 			setPatterns(s.excludePatterns);
 			setSavedPatterns(s.excludePatterns);
-			setNotice("Exclude patterns saved. Folders are being rescanned.");
+			setNotice(t("folders.patternsSaved"));
 		});
 
 	const saveSchedule = (next: ScheduleSettings) =>
@@ -177,12 +174,12 @@ export function FolderAndSchedulePanel() {
 
 	return (
 		<section aria-labelledby="folders-heading">
-			<h2 id="folders-heading">Folders</h2>
+			<h2 id="folders-heading">{t("folders.heading")}</h2>
 			<p role="status">
 				{progressText(status?.indexing ?? false, status?.progress ?? null)}
 			</p>
 			{folders.length === 0 ? (
-				<p>No folders yet. Add one to start indexing.</p>
+				<p>{t("folders.empty")}</p>
 			) : (
 				<ul>
 					{folders.map((f) => (
@@ -198,9 +195,13 @@ export function FolderAndSchedulePanel() {
 							</label>{" "}
 							<small title={f.path}>{f.path}</small>{" "}
 							<span>
-								{f.documents} documents, {f.failed} errors, {f.skipped} skipped
-								{!f.enabled && " (paused, left out of search)"}
-								{f.status === "unavailable" && " (unavailable)"}
+								{t("folders.counts", {
+									documents: f.documents,
+									errors: f.failed,
+									skipped: f.skipped,
+								})}
+								{!f.enabled && ` ${t("folders.pausedNote")}`}
+								{f.status === "unavailable" && ` ${t("folders.unavailable")}`}
 							</span>{" "}
 							{f.failed > 0 && (
 								<button
@@ -208,23 +209,25 @@ export function FolderAndSchedulePanel() {
 									aria-expanded={errorsOf === f.id}
 									onClick={() => setErrorsOf(errorsOf === f.id ? null : f.id)}
 								>
-									{errorsOf === f.id ? "Hide errors" : "Show errors"}
+									{errorsOf === f.id
+										? t("folders.hideErrors")
+										: t("folders.showErrors")}
 								</button>
 							)}{" "}
 							{confirming === f.id ? (
 								<fieldset>
 									<legend>
-										Remove {f.label} from the index? Files on disk stay.
+										{t("folders.removeConfirm", { label: f.label })}
 									</legend>
 									<button
 										type="button"
 										disabled={busy}
 										onClick={() => void remove(f)}
 									>
-										Remove
+										{t("folders.remove")}
 									</button>{" "}
 									<button type="button" onClick={() => setConfirming(null)}>
-										Cancel
+										{t("action.cancel")}
 									</button>
 								</fieldset>
 							) : (
@@ -232,23 +235,24 @@ export function FolderAndSchedulePanel() {
 									type="button"
 									disabled={busy}
 									onClick={() => setConfirming(f.id)}
-									aria-label={`Remove ${f.label}`}
+									aria-label={t("folders.removeLabel", { label: f.label })}
 								>
-									Remove…
+									{t("folders.removePrompt")}
 								</button>
 							)}
 							{errorsOf === f.id && (
-								<ul aria-label={`Errors in ${f.label}`}>
+								<ul aria-label={t("folders.errorsIn", { label: f.label })}>
 									{failedDocs.map((d) => (
 										<li key={d.docId}>
-											<span>{d.relPath}</span> <em>{REASONS[d.reason]}</em>{" "}
+											<span>{d.relPath}</span>{" "}
+											<em>{t(`folders.reason.${d.reason}`)}</em>{" "}
 											<button
 												type="button"
 												disabled={busy || !f.enabled}
 												onClick={() => void retry(d)}
-												aria-label={`Retry ${d.relPath}`}
+												aria-label={t("folders.retryLabel", { path: d.relPath })}
 											>
-												Retry
+												{t("folders.retry")}
 											</button>
 										</li>
 									))}
@@ -259,14 +263,15 @@ export function FolderAndSchedulePanel() {
 				</ul>
 			)}
 			<button type="button" disabled={busy} onClick={() => void add()}>
-				Add folder…
+				{t("folders.add")}
 			</button>
 			<h3>
-				<label htmlFor="exclude-patterns">Exclude patterns</label>
+				<label htmlFor="exclude-patterns">{t("folders.excludeLabel")}</label>
 			</h3>
 			<p id="exclude-help">
-				One gitignore pattern per line, such as <code>drafts/</code> or{" "}
-				<code>*.bak</code>. Applies to every folder.
+				{t("folders.excludeHelp.lead")} <code>drafts/</code>{" "}
+				{t("folders.excludeHelp.or")} <code>*.bak</code>
+				{t("folders.excludeHelp.tail")}
 			</p>
 			<textarea
 				id="exclude-patterns"
@@ -280,23 +285,17 @@ export function FolderAndSchedulePanel() {
 				disabled={busy || patterns === savedPatterns}
 				onClick={() => void savePatterns()}
 			>
-				Save patterns
+				{t("folders.savePatterns")}
 			</button>
-			<h3 id="schedule-heading">Schedule</h3>
+			<h3 id="schedule-heading">{t("schedule.heading")}</h3>
 			<p role="status" aria-labelledby="schedule-heading">
 				{scheduleText(schedule?.current ?? null)}
 			</p>
 			{sched && (
 				<>
 					<fieldset disabled={busy}>
-						<legend>Indexing</legend>
-						{(
-							[
-								["auto", "Automatic"],
-								["paused", "Paused"],
-								["run_now", "Index everything now"],
-							] as const
-						).map(([mode, label]) => (
+						<legend>{t("schedule.modeLegend")}</legend>
+						{(["auto", "paused", "run_now"] as const).map((mode) => (
 							<label key={mode}>
 								<input
 									type="radio"
@@ -304,12 +303,12 @@ export function FolderAndSchedulePanel() {
 									checked={sched.mode === mode}
 									onChange={() => void saveSchedule({ ...sched, mode })}
 								/>{" "}
-								{label}
+								{t(`schedule.mode.${mode}`)}
 							</label>
 						))}
 					</fieldset>
 					<fieldset disabled={busy}>
-						<legend>Allowed hours</legend>
+						<legend>{t("schedule.hoursLegend")}</legend>
 						<label>
 							<input
 								type="checkbox"
@@ -323,22 +322,22 @@ export function FolderAndSchedulePanel() {
 									})
 								}
 							/>{" "}
-							Only index between
+							{t("schedule.onlyBetween")}
 						</label>{" "}
 						{sched.allowedHours && (
 							<>
 								<input
 									type="time"
-									aria-label="Start time"
+									aria-label={t("schedule.startTime")}
 									value={toTime(sched.allowedHours.startMinute)}
 									onChange={(e) =>
 										setHour("startMinute", e.currentTarget.value)
 									}
 								/>{" "}
-								and{" "}
+								{t("schedule.and")}{" "}
 								<input
 									type="time"
-									aria-label="End time"
+									aria-label={t("schedule.endTime")}
 									value={toTime(sched.allowedHours.endMinute)}
 									onChange={(e) => setHour("endMinute", e.currentTarget.value)}
 								/>
@@ -346,7 +345,7 @@ export function FolderAndSchedulePanel() {
 						)}
 					</fieldset>
 					<label>
-						On low battery, in Low Power Mode, or when your Mac is hot:{" "}
+						{t("schedule.lowPowerLabel")}{" "}
 						<select
 							disabled={busy}
 							value={sched.lowPower}
@@ -358,8 +357,10 @@ export function FolderAndSchedulePanel() {
 								})
 							}
 						>
-							<option value="pause">Pause indexing</option>
-							<option value="one_worker">Keep going slowly</option>
+							<option value="pause">{t("schedule.lowPower.pause")}</option>
+							<option value="one_worker">
+								{t("schedule.lowPower.one_worker")}
+							</option>
 						</select>
 					</label>
 				</>
