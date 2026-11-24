@@ -57,5 +57,10 @@
         "vendor/pdfium/lib/libpdfium.dylib"
       ]
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": ""
+    }
   }
 }

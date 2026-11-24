@@ -46,12 +46,17 @@ tokio-util = { version = "0.7", default-features = false }
 notify-debouncer-full = "0.8"
 tauri-plugin-dialog = "2"
 qrcode = { version = "0.15", default-features = false, features = ["svg"] }
+# Only restore_update/install are called; its own HTTP client never is (ADR-022).
+tauri-plugin-updater = { version = "2.14.1", default-features = false }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
 tempfile = "3.27.0"
 proptest = { version = "1", default-features = false, features = ["std"] }
 ts-rs = "12"
+# Sign throwaway update packages in tests (minisign format by hand). Both are already in the build graph.
+ring = "0.17"
+base64 = "0.23"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.11.1", features = ["accelerate"] }

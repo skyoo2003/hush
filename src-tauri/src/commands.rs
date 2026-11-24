@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use tauri_plugin_dialog::DialogExt;
 
+use crate::brand;
 use crate::desktop::{self, ShortcutError};
 use crate::error::{AppError, ErrorCode};
 use crate::ingest::error::WatchError;
@@ -30,6 +31,7 @@ use crate::security::pii_guard;
 use crate::sponsor::{self, SponsorLink};
 use crate::storage::db::{ChunkId, Db, DocId};
 use crate::storage::documents::{FailedDocument, FolderInfo};
+use crate::update::{self, error::UpdateError, AvailableUpdate};
 
 // Quick-search window set.
 
@@ -658,6 +660,57 @@ pub async fn import_model_file<R: Runtime>(
     })
     .await
     .map_err(|_| AppError::internal("import task failed"))?
+}
+
+fn update_error(e: UpdateError) -> AppError {
+    let code = match e {
+        UpdateError::NotConfigured => ErrorCode::UpdaterNotConfigured,
+        UpdateError::AirGapEnabled => ErrorCode::AirGapEnabled,
+        UpdateError::Signature => ErrorCode::UpdateSignatureInvalid,
+        _ => {
+            // UpdateError messages carry no paths, URLs, or hosts.
+            tracing::warn!(error = %e, "update failed");
+            ErrorCode::UpdateFailed
+        }
+    };
+    AppError {
+        code,
+        message: e.to_string(),
+    }
+}
+
+/// Checks the latest release's signed manifest. Only a click runs it; nothing checks on its own.
+/// None means this is the latest version.
+#[tauri::command]
+pub async fn check_for_update<R: Runtime>(
+    app: AppHandle<R>,
+    net: State<'_, net::Client>,
+    pending: State<'_, update::Pending>,
+) -> Result<Option<AvailableUpdate>, AppError> {
+    let updater = update::updater(&app).map_err(update_error)?;
+    update::check(&net, brand::UPDATE_MANIFEST_URL, &updater, &pending)
+        .await
+        .map_err(update_error)
+}
+
+/// Downloads and installs the update the last check found once its signature verifies, then
+/// relaunches the app.
+#[tauri::command]
+pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<(), AppError> {
+    let a = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (Some(net), Some(pending)) = (
+            a.try_state::<net::Client>(),
+            a.try_state::<update::Pending>(),
+        ) else {
+            return Err(AppError::internal("app is not ready"));
+        };
+        // A dedicated blocking thread, because extracting the archive writes files.
+        tauri::async_runtime::block_on(update::install(&net, &pending)).map_err(update_error)
+    })
+    .await
+    .map_err(|_| AppError::internal("update task failed"))??;
+    app.restart()
 }
 
 #[tauri::command]
