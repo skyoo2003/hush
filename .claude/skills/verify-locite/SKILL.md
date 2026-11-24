@@ -5,7 +5,7 @@ description: Launch and drive the real Locite desktop app (Tauri v2, macOS) to p
 
 # Verify Locite
 
-Locite is a macOS desktop app: a Rust backend plus a React UI in two WKWebView windows. `main` is 960x680 and shows the app. `quick-search` is a 680x421 always-on-top popup, hidden at start, toggled by the global shortcut `Cmd+Shift+Space`. There is no web URL to point a browser at. Without the Tauri runtime, `invoke()` fails, so `pnpm dev` in a browser proves nothing. Drive the real binary through macOS Accessibility (System Events keystrokes plus an AX tree dump) and capture windows with `screencapture -l`.
+Locite is a macOS desktop app: a Rust backend plus a React UI in two WKWebView windows. `main` is 960x680, hidden at launch once folders exist, and opened from the tray. `quick-search` is a 680x460 always-on-top popup, hidden at start, toggled by the global shortcut `Cmd+Shift+Space`. There is no web URL to point a browser at. Without the Tauri runtime, `invoke()` fails, so `pnpm dev` in a browser proves nothing. Drive the real binary through macOS Accessibility (System Events keystrokes plus an AX tree dump) and capture windows with `screencapture -l`.
 
 All helpers live in `.claude/skills/verify-locite/scripts/`. Run them from the repo root. Each run writes its evidence to `.verify/<UTC timestamp>/` (git-ignored), and `.verify/current` points at the latest run.
 
@@ -30,7 +30,8 @@ Requirements: the terminal app needs Accessibility and Screen Recording permissi
 ```
 
 - The build embeds `dist/`, so no Vite server or port 1420 is involved. A cold build takes about 40s, and an incremental one a few seconds.
-- The app is ready when the log (`~/Library/Logs/io.github.skyoo2003.locite/locite.<UTC date>.log`) has a new `app started` line **and** the main window's AX tree answers with `AXHeading title=Locite`. The log line alone is not enough: it is written *before* storage opens, and a keychain prompt can block setup after it. While setup runs, the main thread is blocked and AX returns nothing, so the rendered heading means setup returned. A setup failure logs `storage open failed` and the process exits.
+- The app is ready when the log (`~/Library/Logs/io.github.skyoo2003.locite/locite.<UTC date>.log`) has a new `app ready` line, written when setup returns. `app started` is written *before* storage opens, and a keychain prompt can block setup after it. A setup failure logs `storage open failed` and the process exits.
+- The app has no Dock icon (Accessory). The main window opens at launch only when no folder is registered or the shortcut failed to register; otherwise open it from the tray's Settings item. It switches to Regular (Dock icon) while open and back when closed.
 - On success the script prints the run dir. On failure it exits non-zero with the reason: build failed, `storage open failed`, the app exited, or a 30s timeout plus `launch-timeout.png`.
 - An empty data dir is fine. The app creates the DB and the keychain key on first launch. On a machine that already has a key, it reuses it.
 
@@ -46,7 +47,7 @@ This is read-only. It checks that the recorded pid is alive, that no foreign `lo
 
 | Need | Command |
 | --- | --- |
-| Window state | `swift .claude/skills/verify-locite/scripts/windows.swift "$(cat .verify/current/pid)"` gives `main 1 2909 960x680` and `quick-search 0 2910 680x421` |
+| Window state | `swift .claude/skills/verify-locite/scripts/windows.swift "$(cat .verify/current/pid)"` gives `main 1 2909 960x680` and `quick-search 0 2910 680x460` |
 | UI tree (ARIA labels, input values, headings) | `swift .claude/skills/verify-locite/scripts/ax.swift "$(cat .verify/current/pid)"` |
 | Toggle quick-search | `osascript -e 'tell application "System Events" to key code 49 using {command down, shift down}'` |
 | Type into the focused field | `osascript -e 'tell application "System Events" to keystroke "20261122"'` |
@@ -55,11 +56,11 @@ This is read-only. It checks that the recorded pid is alive, that no foreign `lo
 | Press a control (checkbox, switch, button) | `swift .claude/skills/verify-locite/scripts/press.swift "$(cat .verify/current/pid)" AXCheckBox "Air-Gap mode"` |
 | Scripted journeys | `.claude/skills/verify-locite/scripts/journey-quick-search.sh`, `.claude/skills/verify-locite/scripts/journey-air-gap.sh` |
 
-Stable handles: the search input is `AXTextField/AXSearchField desc=Search` (`aria-label="Search"`), and the main heading is `AXHeading title=Locite`. Both windows have the title `Locite`, so identify them by size or by `windows.swift` label, never by title.
+Stable handles: the search input is `AXComboBox title=Search desc=Search` (`aria-label="Search"`), and the main heading is `AXHeading title=Locite`. Both windows have the title `Locite`, so identify them by size or by `windows.swift` label, never by title.
 
 Rules:
 
-- Keystrokes go to whatever app is frontmost. Before typing, confirm that the frontmost pid is ours: `osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true'`.
+- Keystrokes go to whatever app is frontmost. Before typing, confirm that the frontmost pid is ours: `lsappinfo info -only pid "$(lsappinfo front)"`. System Events never reports Locite as frontmost, because it is an Accessory (UIElement) app.
 - WebKit builds its AX tree lazily. The first `ax.swift` call after a window appears often shows an empty `AXGroup`. Poll a few times, as `journey-quick-search.sh` does, before you call it a failure.
 - Type digits or other non-words. Words trigger the macOS autocorrect bubble, and the next Escape closes the bubble instead of reaching the page.
 

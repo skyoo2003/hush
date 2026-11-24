@@ -10,6 +10,7 @@
     "allow-get-index-status",
     "allow-get-settings",
     "allow-set-air-gap",
+    "allow-set-shortcut",
     "allow-list-models",
     "allow-export-pack",
     "core:event:allow-listen",

@@ -215,7 +215,7 @@ The original ID `com.hush.app` ended with `.app`, which Tauri warns conflicts wi
 - **Reader choice.** `Db::read` takes the lowest-indexed free reader and waits on a round-robin reader only when all four are busy. A single caller therefore always gets reader 0, so one page cache stays warm instead of four caches each warming the same pages, which under `soft_heap_limit` would evict each other. Tests: sequential reads use the same connection, and a read held open does not block reads on other threads (this test fails on the old round-robin code).
 - **`temp_store`.** `PRAGMA temp_store` returns 2 (MEMORY) on every connection, and `compile_options` has no `TEMP_STORE=0`, which would force temp files whatever the pragma says. Both are asserted in `connection_pragmas`.
 - **Air-Gap command.** `set_air_gap(enabled: bool)` is a `main`-window command. It calls `AirGapGuard::set_enabled`, which persists before switching. It is not tier-gated, because Air-Gap is a safety feature (rule 10). A test invokes it through IPC and checks both the live guard and the reloaded setting. `quick-search` is denied by the ACL.
-- **Global shortcut.** `CmdOrCtrl+Shift+Space` toggles the `quick-search` window (show and focus, or hide). It is registered in Rust during setup. If another app owns the shortcut, the app logs a warning and starts anyway.
+- **Global shortcut.** (Superseded by ADR-016.) `CmdOrCtrl+Shift+Space` toggles the `quick-search` window (show and focus, or hide). It is registered in Rust during setup. If another app owns the shortcut, the app logs a warning and starts anyway.
 
 ### New crates
 
@@ -536,3 +536,27 @@ Measured with `cargo run --release --manifest-path spikes/embed_bench/Cargo.toml
 - A folder added before the embedding model loads has no watcher yet; it is scanned at the next launch.
 - A job already running when a folder is removed may fail against the deleted folder (foreign keys reject it) and counts as failed. Nothing is written for the removed folder.
 - `pipeline::commit` deletes a document whose file vanished between parse and commit only while the folder root still exists. A missing root returns `Commit::Unavailable` and writes nothing, so the document in flight on an unplugged drive is kept.
+
+## ADR-016. Quick-search window, tray, and Dock policy
+
+- Date: 2026-11-24
+- Status: Accepted
+
+### Decision
+
+- **Shortcut.** Default `Cmd+Shift+Space`, saved in the `quick_search_shortcut` setting and changed from the main window (`set_shortcut`, main window only). A failed swap keeps the old shortcut registered and saved. Alt+Space was the first choice and was dropped: Alfred and Raycast use it, macOS lets two apps register the same Carbon hotkey, so registration succeeds while the other app takes focus and the popup hides on blur (seen with Alfred on the maintainer's machine). Registration failure is the only conflict the app can detect; `get_settings.shortcutRegistered` is false then, the main window opens at launch, and it shows a notice.
+- **Window.** `quick-search` (680x460) is created hidden at startup and only shown and hidden. Each show moves it to the monitor under the cursor, centered, top edge a quarter of the way down, in logical points (on macOS the cursor is scaled by the primary monitor and each monitor by its own factor). It hides on Esc and on focus loss. Hiding also hides the app when the main window is closed, which returns focus to the previous app; showing unhides it first. Measured show latency: 22 to 56 ms over 10 presses on an M4 (budget 150 ms).
+- **Dock.** `ActivationPolicy::Accessory` at launch; `Regular` while the main window is open. Closing the main window hides it. The main window opens at launch only when no folder is registered or the shortcut did not register, and on a reopen of the app. No API used needs the Accessibility permission (Carbon hotkeys, `NSEvent.mouseLocation`).
+- **`search://focus`.** `true` when the window shows and on every `search` call (that is, while the user types); `false` when it hides. Emitted from Rust, so no window needs `core:event:allow-emit`. Until `ingest/scheduler.rs` exists, `start_indexing` listens and limits parsing to one worker while it is `true`.
+- **Tray.** Search, Indexing n/m (finished of total, "Up to date" when idle), Pause/Resume Indexing, Air-Gap status, Sponsor (one item per `SPONSOR_URLS` entry, opened in the browser through `/usr/bin/open`), Settings, Quit. Labels update from `index://progress` and `set_air_gap`.
+
+### New crates
+
+| Crate | Reason | License | Network |
+| --- | --- | --- | --- |
+| `tray-icon` 0.25 (tauri `tray-icon` feature; already in Cargo.lock) | Menu bar icon and menu | MIT OR Apache-2.0 | None |
+
+### Constraints
+
+- A shortcut another app also registers (Alfred, Raycast) is not detected: it registers, and the other app wins focus.
+- The tray menu was not driven in the running app (verification stopped before it).

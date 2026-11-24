@@ -4,6 +4,7 @@ import { APP_NAME } from "./brand";
 import { AirGapToggle } from "./components/AirGapToggle";
 import { FolderList } from "./components/FolderList";
 import { QuickSearchModal } from "./components/QuickSearchModal";
+import { ShortcutSetting } from "./components/ShortcutSetting";
 
 // Both windows load index.html; the window label picks the UI.
 const label = getCurrentWindow().label;
@@ -16,6 +17,7 @@ export function App() {
     <main>
       <h1>{APP_NAME}</h1>
       <FolderList />
+      <ShortcutSetting />
       <AirGapToggle />
     </main>
   );

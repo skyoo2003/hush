@@ -18,6 +18,7 @@ const COMMANDS: &[&str] = &[
     "get_index_status",
     "get_settings",
     "set_air_gap",
+    "set_shortcut",
     "list_models",
     "export_pack",
 ];
