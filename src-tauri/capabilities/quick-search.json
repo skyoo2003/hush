@@ -1,12 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "quick-search",
-  "description": "Quick-search popup: search, open, reveal, and cite sources, index status, hide itself.",
+  "description": "Quick-search popup: search, open or reveal, and cite sources, index status, hide itself.",
   "windows": ["quick-search"],
   "permissions": [
     "allow-search",
     "allow-open-source",
-    "allow-reveal-source",
     "allow-copy-citation",
     "allow-hide-window",
     "allow-get-index-status",

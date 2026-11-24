@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-failed-documents"
+description = "Enables the list_failed_documents command without any pre-configured scope."
+commands.allow = ["list_failed_documents"]
+
+[[permission]]
+identifier = "deny-list-failed-documents"
+description = "Denies the list_failed_documents command without any pre-configured scope."
+commands.deny = ["list_failed_documents"]

@@ -15,6 +15,7 @@ use super::keychain::{DbKey, KeyProvider};
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_init.sql"),
     include_str!("migrations/0002_chunk_sha256.sql"),
+    include_str!("migrations/0003_folder_skipped.sql"),
 ];
 const READERS: usize = 4;
 /// Page cache budget, in KiB. ADR-001: KNN is ~10x faster once the vector table fits in the cache.
@@ -409,7 +410,8 @@ pub(crate) mod tests {
         let (_dir, db) = temp_db();
         let bad = insert_doc(&db, "a.txt", "alpha");
         insert_doc(&db, "b.txt", "bravo");
-        db.mark_error(bad, "parse_failed").unwrap();
+        db.mark_error(bad, crate::storage::documents::FailReason::ParseFailed)
+            .unwrap();
         let folder = db.folders().unwrap().remove(0);
         assert_eq!((folder.documents, folder.failed), (2, 1));
         db.set_folder_status(folder.id, FolderStatus::Unavailable)

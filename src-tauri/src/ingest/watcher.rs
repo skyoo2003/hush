@@ -66,7 +66,7 @@ pub struct FolderWatcher {
 }
 
 impl FolderWatcher {
-    /// Watches `/Volumes` (when present) and every registered folder, bringing each
+    /// Watches `/Volumes` (when present) and every enabled folder, bringing each
     /// folder's status in line with the disk and rescanning the ones that are present.
     pub fn start(db: Arc<Db>, queue: Arc<IndexQueue>) -> Result<Self, WatchError> {
         let (tx, rx) = channel();
@@ -83,6 +83,7 @@ impl FolderWatcher {
         let folders = db
             .folders()?
             .into_iter()
+            .filter(|f| f.enabled)
             .map(|f| {
                 let root = Folder {
                     root: PathBuf::from(f.path).into(),
@@ -397,6 +398,43 @@ pub fn remove_folder(
         q.forget_folder(id);
     }
     db.delete_folder(id)?;
+    Ok(())
+}
+
+/// Stops or resumes watching and indexing a folder. Its documents stay either way; search
+/// leaves out a disabled folder's documents.
+pub fn set_folder_enabled(
+    db: &Db,
+    watcher: Option<&FolderWatcher>,
+    queue: Option<&IndexQueue>,
+    id: i64,
+    enabled: bool,
+) -> Result<(), WatchError> {
+    let folder = db.folder(id)?.ok_or(WatchError::NotFound)?;
+    db.set_folder_enabled(id, enabled)?;
+    if enabled {
+        if let Some(w) = watcher {
+            w.add(id, Path::new(&folder.path));
+        }
+        return Ok(());
+    }
+    if let Some(w) = watcher {
+        w.remove(id);
+    }
+    if let Some(q) = queue {
+        q.forget_folder(id);
+    }
+    Ok(())
+}
+
+/// Rescans every enabled folder, so a changed exclude pattern takes effect.
+pub fn rescan_enabled(db: &Db, watcher: Option<&FolderWatcher>) -> Result<(), WatchError> {
+    let Some(w) = watcher else {
+        return Ok(());
+    };
+    for f in db.folders()?.into_iter().filter(|f| f.enabled) {
+        w.add(f.id, Path::new(&f.path));
+    }
     Ok(())
 }
 

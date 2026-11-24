@@ -11,7 +11,7 @@ const en = {
   "search.modelMissing":
     "Search is off until the embedding model is installed.",
   "search.sourceNotFound":
-    "That file was moved or deleted. It drops out after the next scan.",
+    "That file was moved or deleted. It is being removed from the results.",
   "search.clipboardFailed": "Could not copy the citation.",
   "search.failed": "Something went wrong. Try again.",
   "search.copied": "Citation copied.",
@@ -42,7 +42,7 @@ const ko: Record<MessageKey, string> = {
     "파일 {count}개를 아직 색인하는 중입니다. 결과가 일부만 보일 수 있습니다.",
   "search.modelMissing": "임베딩 모델을 설치해야 검색할 수 있습니다.",
   "search.sourceNotFound":
-    "파일이 옮겨졌거나 삭제되었습니다. 다음 스캔 후 목록에서 빠집니다.",
+    "파일이 옮겨졌거나 삭제되었습니다. 결과에서 곧 빠집니다.",
   "search.clipboardFailed": "인용을 복사하지 못했습니다.",
   "search.failed": "문제가 생겼습니다. 다시 시도하세요.",
   "search.copied": "인용을 복사했습니다.",

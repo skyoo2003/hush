@@ -12,6 +12,7 @@ import { type MessageKey, t } from "../i18n";
 import type { AppError } from "../ipc/AppError";
 import type { IndexProgress } from "../ipc/IndexProgress";
 import type { IndexStatus } from "../ipc/IndexStatus";
+import type { OpenMode } from "../ipc/OpenMode";
 import type { SearchHit } from "../ipc/SearchHit";
 import type { SearchResults } from "../ipc/SearchResults";
 import {
@@ -97,15 +98,17 @@ export function QuickSearchModal() {
     void invoke("hide_window");
   };
 
-  const act = async (
-    cmd: "open_source" | "reveal_source" | "copy_citation",
-    hit: SearchHit,
-  ) => {
+  const act = async (cmd: "open" | "reveal" | "copy", hit: SearchHit) => {
     try {
-      await invoke(cmd, { chunkId: hit.chunkId });
+      if (cmd === "copy") {
+        await invoke("copy_citation", { chunkId: hit.chunkId });
+      } else {
+        const mode: OpenMode = cmd;
+        await invoke("open_source", { chunkId: hit.chunkId, mode });
+      }
       setActionError(null);
-      if (cmd === "open_source") hide();
-      if (cmd === "copy_citation") setStatus(t("search.copied"));
+      if (cmd === "open") hide();
+      if (cmd === "copy") setStatus(t("search.copied"));
     } catch (e) {
       setActionError(t(errorKey(e)));
     }
@@ -129,12 +132,7 @@ export function QuickSearchModal() {
     }
     if (!cmd || !current) return;
     e.preventDefault();
-    const ipc = {
-      open: "open_source",
-      reveal: "reveal_source",
-      copy: "copy_citation",
-    } as const;
-    void act(ipc[cmd], current);
+    void act(cmd, current);
   };
 
   const error =
@@ -185,7 +183,7 @@ export function QuickSearchModal() {
                 id={`hit-${i}`}
                 hit={hit}
                 selected={i === selected}
-                onOpen={() => void act("open_source", hit)}
+                onOpen={() => void act("open", hit)}
                 onHover={() => setSelected(i)}
               />
             ))}

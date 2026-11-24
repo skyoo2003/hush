@@ -7,13 +7,14 @@
 use std::path::Path;
 
 use super::chunker::{self, Chunk, ChunkerConfig, TokenCounter};
-use super::error::PipelineError;
+use super::error::{ParseError, PipelineError};
 use super::hash::{self, Decision, FileState};
 use super::parser::ParserRegistry;
 use super::scanner;
 use crate::rag::embedder::Embedder;
 use crate::security::paths::ScopedPath;
 use crate::storage::db::{Db, DocId};
+use crate::storage::documents::FailReason;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Change {
@@ -84,7 +85,7 @@ pub fn prepare(
     let decision = match hash::decide(prev.as_ref(), stat, || hash::sha256_file(&path)) {
         Ok(d) => d,
         Err(e) => {
-            db.mark_error(doc_id, "read_failed")?;
+            db.mark_error(doc_id, FailReason::ReadFailed)?;
             return Err(PipelineError::Io(e));
         }
     };
@@ -105,7 +106,7 @@ pub fn prepare(
     let doc = match registry.parse(&path) {
         Ok(d) => d,
         Err(e) => {
-            db.mark_error(doc_id, "parse_failed")?;
+            db.mark_error(doc_id, fail_reason(&e))?;
             return Err(e.into());
         }
     };
@@ -120,6 +121,22 @@ pub fn prepare(
     }))
 }
 
+fn fail_reason(e: &ParseError) -> FailReason {
+    match e {
+        ParseError::Encrypted => FailReason::Encrypted,
+        ParseError::TooLarge | ParseError::DecompressedTooLarge => FailReason::TooLarge,
+        ParseError::Ocr(_) => FailReason::OcrFailed,
+        ParseError::MagicMismatch
+        | ParseError::Corrupt(_)
+        | ParseError::Zip(_)
+        | ParseError::Xml(_)
+        | ParseError::Image
+        | ParseError::Pdfium(_) => FailReason::Corrupted,
+        ParseError::Io(_) => FailReason::ReadFailed,
+        ParseError::UnsupportedType | ParseError::PdfiumUnavailable => FailReason::ParseFailed,
+    }
+}
+
 pub fn embed(
     db: &Db,
     parsed: &Parsed,
@@ -127,7 +144,7 @@ pub fn embed(
 ) -> Result<Vec<Vec<f32>>, PipelineError> {
     let texts: Vec<&str> = parsed.chunks.iter().map(|c| c.text.as_str()).collect();
     embedder.embed_passages(&texts).map_err(|e| {
-        match db.mark_error(parsed.doc_id, "embed_failed") {
+        match db.mark_error(parsed.doc_id, FailReason::EmbedFailed) {
             Ok(()) => PipelineError::Embed(e),
             Err(s) => s.into(),
         }
@@ -410,7 +427,7 @@ mod tests {
         };
         assert!(matches!(run(), Err(PipelineError::Parse(_))));
         assert_eq!(
-            count(&db, "SELECT count(*) FROM documents WHERE status = 'error' AND error_code = 'parse_failed'"),
+            count(&db, "SELECT count(*) FROM documents WHERE status = 'error' AND error_code = 'corrupted'"),
             1
         );
         // No hash was stored, so the next run still tries, on the same row.
