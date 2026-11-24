@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dismiss-sponsor-banner"
+description = "Enables the dismiss_sponsor_banner command without any pre-configured scope."
+commands.allow = ["dismiss_sponsor_banner"]
+
+[[permission]]
+identifier = "deny-dismiss-sponsor-banner"
+description = "Denies the dismiss_sponsor_banner command without any pre-configured scope."
+commands.deny = ["dismiss_sponsor_banner"]

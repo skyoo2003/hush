@@ -27,6 +27,7 @@ use crate::rag::query_parser;
 use crate::security::error::SecurityError;
 use crate::security::paths::ScopedPath;
 use crate::security::pii_guard;
+use crate::sponsor::{self, SponsorLink};
 use crate::storage::db::{ChunkId, Db, DocId};
 use crate::storage::documents::{FailedDocument, FolderInfo};
 
@@ -387,6 +388,45 @@ pub struct Settings {
     pub shortcut_registered: bool,
     /// gitignore lines, one per line, applied to every folder. Invalid lines are ignored.
     pub exclude_patterns: String,
+    /// Self-reported "I sponsored", never verified. Only the thank-you badge reads it
+    /// (`scripts/check-supporter.sh`): it unlocks nothing.
+    pub supporter: bool,
+    /// Every theme is selectable by everyone.
+    pub theme: Theme,
+    /// Show the one-time milestone banner: 100 searches or 100 indexed documents, not dismissed.
+    pub sponsor_banner: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum Theme {
+    #[default]
+    System,
+    OledDark,
+    Terminal,
+}
+
+const SUPPORTER_SETTING: &str = "supporter";
+const THEME_SETTING: &str = "theme";
+const BANNER_DISMISSED_SETTING: &str = "sponsor_banner_dismissed";
+const MILESTONE: i64 = 100;
+
+fn flag(db: &Db, key: &str) -> bool {
+    db.setting(key)
+        .inspect_err(|e| tracing::warn!(error = %e, key, "setting not read"))
+        .ok()
+        .flatten()
+        .is_some_and(|v| v == "1")
+}
+
+fn sponsor_banner(db: &Db) -> bool {
+    if flag(db, BANNER_DISMISSED_SETTING) {
+        return false;
+    }
+    db.milestone_counts()
+        .inspect_err(|e| tracing::warn!(error = %e, "milestone counts not read"))
+        .is_ok_and(|(searches, docs)| searches >= MILESTONE || docs >= MILESTONE)
 }
 
 #[tauri::command]
@@ -400,8 +440,17 @@ pub fn get_settings<R: Runtime>(
         tracing::warn!(error = %e, "exclude patterns not read");
         None
     });
+    let theme = db
+        .setting(THEME_SETTING)
+        .ok()
+        .flatten()
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default();
     Settings {
         exclude_patterns: exclude_patterns.unwrap_or_default(),
+        supporter: flag(&db, SUPPORTER_SETTING),
+        theme,
+        sponsor_banner: sponsor_banner(&db),
         air_gap: net.guard().is_enabled(),
         shortcut_registered: desktop::is_registered(&app, &shortcut),
         shortcut,
@@ -467,6 +516,57 @@ pub fn set_exclude_patterns<R: Runtime>(
     let watcher = app.try_state::<FolderWatcher>();
     watcher::rescan_enabled(&db, watcher.as_deref()).map_err(folder_error)?;
     Ok(get_settings(app, db, net))
+}
+
+fn save(db: &Db, key: &str, value: &str) -> Result<(), AppError> {
+    db.set_setting(key, value)
+        .map_err(|_| AppError::internal("failed to save setting"))
+}
+
+/// Saves the self-reported supporter flag. Turning it on also dismisses the milestone banner
+/// for good, so the banner never needs to read the flag.
+#[tauri::command]
+pub fn set_supporter<R: Runtime>(
+    app: AppHandle<R>,
+    on: bool,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Result<Settings, AppError> {
+    save(&db, SUPPORTER_SETTING, if on { "1" } else { "0" })?;
+    if on {
+        save(&db, BANNER_DISMISSED_SETTING, "1")?;
+    }
+    Ok(get_settings(app, db, net))
+}
+
+#[tauri::command]
+pub fn set_theme<R: Runtime>(
+    app: AppHandle<R>,
+    theme: Theme,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Result<Settings, AppError> {
+    let value = serde_json::to_string(&theme).map_err(|e| AppError::internal(&e.to_string()))?;
+    save(&db, THEME_SETTING, &value)?;
+    Ok(get_settings(app, db, net))
+}
+
+#[tauri::command]
+pub fn dismiss_sponsor_banner<R: Runtime>(
+    app: AppHandle<R>,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Result<Settings, AppError> {
+    save(&db, BANNER_DISMISSED_SETTING, "1")?;
+    Ok(get_settings(app, db, net))
+}
+
+/// Opens sponsor channel `channel` in the external browser, or with Air-Gap on returns its QR
+/// code and opens nothing. No request is made either way.
+#[tauri::command]
+pub fn open_sponsor(channel: usize, net: State<'_, net::Client>) -> Result<SponsorLink, AppError> {
+    sponsor::link(channel, net.guard().is_enabled(), sponsor::open_in_browser)
+        .ok_or_else(|| AppError::internal("unknown sponsor channel"))
 }
 
 #[tauri::command]
