@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Writes THIRD_PARTY_NOTICES for a release: every Rust crate in the built graph (cargo-about, offline,
-// src-tauri/about.toml), the npm packages bundled into dist/ (production dependencies), and PDFium.
+// src-tauri/about.toml), the npm packages bundled into dist/ (production dependencies), PDFium, and the
+// embedding models in the catalog (models/licenses/). The app compiles in the copy at the repository root.
 // Usage: node scripts/third-party-notices.mjs <out-file>. Needs scripts/fetch-pdfium.sh and fetched crates.
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -58,6 +59,12 @@ const pdfium = join(tauri, "vendor", "pdfium");
 parts.push(`${read(join(pdfium, "LICENSE"))}\n`);
 for (const f of readdirSync(join(pdfium, "licenses")).sort()) {
   parts.push(`${"-".repeat(80)}\n${f}\n\n${read(join(pdfium, "licenses", f))}\n`);
+}
+
+parts.push(`\n${rule}Embedding models (downloaded or imported separately, not bundled)\n${rule}`);
+const catalog = JSON.parse(read(join(root, "models", "catalog.json")));
+for (const m of catalog.models.filter((m) => m.kind === "embedding").sort((a, b) => a.id.localeCompare(b.id))) {
+  parts.push(`${"-".repeat(80)}\n${read(join(root, "models", "licenses", `${m.id}.txt`))}\n`);
 }
 
 writeFileSync(out, `${parts.join("\n")}\n`);

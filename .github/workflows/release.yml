@@ -71,6 +71,8 @@ jobs:
           (cd src-tauri && cargo cyclonedx --format json --spec-version 1.5 --target aarch64-apple-darwin --override-filename sbom)
           mv src-tauri/sbom.json "out/extras/${slug}-${v}.cdx.json"
           node scripts/third-party-notices.mjs out/extras/THIRD_PARTY_NOTICES.txt
+          # The app compiles in the repository copy; a stale one fails the release.
+          cmp out/extras/THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES
           git archive --format=tar.gz --prefix="${slug}-${v}/" -o "out/extras/${slug}-${v}-source.tar.gz" "$GITHUB_REF_NAME"
           tar -tzf "out/extras/${slug}-${v}-source.tar.gz" | grep -qx "${slug}-${v}/src-tauri/Cargo.lock"
           tar -tzf "out/extras/${slug}-${v}-source.tar.gz" | grep -qx "${slug}-${v}/pnpm-lock.yaml"

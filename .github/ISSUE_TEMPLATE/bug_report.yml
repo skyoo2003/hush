@@ -51,7 +51,7 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Logs contain doc IDs only. Check that nothing private is included before pasting.
+      description: Logs contain doc IDs only. Data and diagnostics > Export diagnostics saves them, with crash reports and counts, in one zip you can attach. Check that nothing private is included before attaching or pasting.
       render: text
   - type: checkboxes
     id: privacy

@@ -49,6 +49,8 @@ pub trait KeyProvider: Send + Sync {
     fn load(&self) -> Result<Option<DbKey>, StorageError>;
     /// Creates or overwrites the stored key.
     fn store(&self, key: &DbKey) -> Result<(), StorageError>;
+    /// Removes the stored key. A missing key is not an error.
+    fn delete(&self) -> Result<(), StorageError>;
 }
 
 /// Login keychain item: service `brand::KEYCHAIN_SERVICE`, account `db-key-v1`.
@@ -80,6 +82,18 @@ impl KeyProvider for KeychainKeyProvider {
         )
         .map_err(|e| StorageError::Keychain(e.code()))
     }
+
+    fn delete(&self) -> Result<(), StorageError> {
+        match security_framework::passwords::delete_generic_password(
+            crate::brand::KEYCHAIN_SERVICE,
+            Self::ACCOUNT,
+        ) {
+            Err(e) if e.code() != Self::ERR_SEC_ITEM_NOT_FOUND => {
+                Err(StorageError::Keychain(e.code()))
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -93,6 +107,11 @@ impl KeyProvider for InMemoryKeyProvider {
 
     fn store(&self, key: &DbKey) -> Result<(), StorageError> {
         *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(Zeroizing::new(*key.as_bytes()));
+        Ok(())
+    }
+
+    fn delete(&self) -> Result<(), StorageError> {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
 }

@@ -7,6 +7,13 @@ All notable changes to Locite are recorded here. The format follows [Keep a Chan
 ### Added
 
 - Offline install: each release carries `models-kit-X.Y.Z.zip` with the redistributable embedding models, their licenses, a manifest, and `SHA256SUMS`. **Import a model file or kit…** installs the whole kit after checking every file against the catalog's SHA-256 ([docs/offline-install.md](docs/offline-install.md)).
+- About panel: copyright, no-warranty notice, the license (GPL-3.0-or-later) with its full text, the third-party notices, and the source link for the exact commit the app was built from. `THIRD_PARTY_NOTICES` is now in the repository and also covers the embedding models.
+- Crash reports are saved locally in the log folder, without the panic message (only the code location and symbol names). **Export diagnostics…** saves a zip of the summary counts, logs, and crash reports. Nothing is sent.
+- **Delete all indexes…** deletes the index database and its keychain key after listing exactly what goes and what stays, then restarts with an empty index.
+
+### Fixed
+
+- PDFs and images (PNG, JPEG) were never indexed: the app registered only the text, Markdown, and DOCX parsers, and the folder watcher ignored the other file types.
 
 ## [0.1.0] - 2026-11-25
 

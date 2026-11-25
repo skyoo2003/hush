@@ -208,6 +208,35 @@ const en = {
   "update.error.signature":
     "The update was rejected because its signature did not verify. Nothing was installed.",
   "update.error.failed": "Could not check for or install the update. Try again later.",
+  "data.heading": "Data and diagnostics",
+  "diag.export": "Export diagnostics…",
+  "diag.body":
+    "Saves a zip with the app and macOS versions, counts of indexed and failed documents, the logs, and crash reports. It holds no document text, file names, paths, or searches. Nothing is sent: share the file yourself if you want help.",
+  "diag.saved": "Diagnostics saved.",
+  "diag.failed": "Could not save diagnostics.",
+  "delete.button": "Delete all indexes…",
+  "delete.title": "This permanently deletes:",
+  "delete.item.db":
+    "The index database: every indexed passage, its vectors and keyword index, and the change history",
+  "delete.item.folders": "The list of watched folders and failed files",
+  "delete.item.settings":
+    "Settings and counters: Air-Gap returns to On, and the shortcut, schedule, exclude patterns, theme, and thank-you badge reset",
+  "delete.item.key": "The database key in your macOS keychain",
+  "delete.kept":
+    "Kept: your original files and folders, downloaded models, logs, and crash reports.",
+  "delete.restart":
+    "{app} then restarts with an empty index. This cannot be undone.",
+  "delete.confirm": "Delete everything listed and restart",
+  "delete.failed": "Could not finish deleting the indexes. Try again.",
+  "about.heading": "About {app}",
+  "about.version": "Version {version}",
+  "about.warranty":
+    "This program comes with ABSOLUTELY NO WARRANTY. It is free software, and you are welcome to redistribute it under the terms of the GNU General Public License, version 3 or (at your option) any later version.",
+  "about.license": "License: {license}. Full text:",
+  "about.source": "Source code of this exact version:",
+  "about.showLicense": "Show the full license text",
+  "about.showNotices": "Show third-party notices",
+  "about.readFailed": "Could not read this text.",
 };
 
 export type MessageKey = keyof typeof en;
@@ -427,6 +456,35 @@ const ko: Record<MessageKey, string> = {
     "서명을 확인하지 못해 업데이트를 거부했습니다. 아무것도 설치하지 않았습니다.",
   "update.error.failed":
     "업데이트를 확인하거나 설치하지 못했습니다. 나중에 다시 시도하세요.",
+  "data.heading": "데이터와 진단",
+  "diag.export": "진단 정보 내보내기…",
+  "diag.body":
+    "앱과 macOS 버전, 인덱싱되거나 실패한 문서 수, 로그, 크래시 보고서를 zip으로 저장합니다. 문서 내용, 파일 이름, 경로, 검색어는 들어가지 않습니다. 자동으로 보내지 않으니 도움이 필요하면 파일을 직접 공유하세요.",
+  "diag.saved": "진단 정보를 저장했습니다.",
+  "diag.failed": "진단 정보를 저장하지 못했습니다.",
+  "delete.button": "모든 인덱스 삭제…",
+  "delete.title": "다음 항목을 영구히 삭제합니다.",
+  "delete.item.db":
+    "인덱스 데이터베이스: 인덱싱된 모든 구절, 벡터와 키워드 인덱스, 변경 기록",
+  "delete.item.folders": "감시 중인 폴더 목록과 실패한 파일 목록",
+  "delete.item.settings":
+    "설정과 카운터: 에어갭은 다시 켜지고, 단축키·일정·제외 패턴·테마·감사 배지는 초기화됩니다",
+  "delete.item.key": "macOS 키체인에 저장된 데이터베이스 키",
+  "delete.kept":
+    "유지되는 항목: 원본 파일과 폴더, 내려받은 모델, 로그, 크래시 보고서",
+  "delete.restart":
+    "삭제 후 {app}이(가) 빈 인덱스로 다시 시작합니다. 되돌릴 수 없습니다.",
+  "delete.confirm": "위 항목을 모두 삭제하고 다시 시작",
+  "delete.failed": "인덱스를 모두 삭제하지 못했습니다. 다시 시도하세요.",
+  "about.heading": "{app} 정보",
+  "about.version": "버전 {version}",
+  "about.warranty":
+    "이 프로그램은 어떠한 보증도 제공하지 않습니다. 자유 소프트웨어이며, GNU 일반 공중 사용 허가서 버전 3 또는 (선택에 따라) 그 이후 버전의 조건에 따라 재배포할 수 있습니다.",
+  "about.license": "라이선스: {license}. 전문:",
+  "about.source": "이 버전의 정확한 소스 코드:",
+  "about.showLicense": "라이선스 전문 보기",
+  "about.showNotices": "서드파티 고지 보기",
+  "about.readFailed": "이 내용을 읽지 못했습니다.",
 };
 
 export const locale = globalThis.navigator?.language ?? "en";

@@ -719,6 +719,83 @@ pub fn export_pack() -> Result<(), AppError> {
     Err(AppError::not_implemented())
 }
 
+/// Saves a diagnostics zip where the user picks (see `diagnostics::export`). Nothing is sent.
+/// False when the save dialog was cancelled.
+#[tauri::command]
+pub async fn export_diagnostics<R: Runtime>(app: AppHandle<R>) -> Result<bool, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = format!("{}-diagnostics.zip", brand::APP_SLUG);
+        let Some(picked) = app.dialog().file().set_file_name(name).blocking_save_file() else {
+            return Ok(false);
+        };
+        let failed = || AppError {
+            code: ErrorCode::DiagnosticsFailed,
+            message: "diagnostics could not be saved".into(),
+        };
+        let dest = picked.into_path().map_err(|_| failed())?;
+        let log_dir = app.path().app_log_dir().map_err(|_| failed())?;
+        let db = app.try_state::<Arc<Db>>();
+        let models = app.try_state::<ModelManager>();
+        let state = crate::diagnostics::AppState {
+            db: db.as_deref().map(|d| &**d),
+            air_gap: app
+                .try_state::<net::Client>()
+                .is_none_or(|n| n.guard().is_enabled()),
+            installed_models: crate::rag::embedder::MODELS
+                .iter()
+                .filter(|m| models.as_ref().is_some_and(|mm| mm.is_installed(m.id)))
+                .map(|m| m.id)
+                .collect(),
+        };
+        crate::diagnostics::export(&dest, &log_dir, &state).map_err(|e| {
+            tracing::warn!(error = %e, "diagnostics export failed");
+            failed()
+        })?;
+        Ok(true)
+    })
+    .await
+    .map_err(|_| AppError::internal("diagnostics task failed"))?
+}
+
+/// Deletes the index DB (folders, indexed text, vectors, keyword index, change history, and
+/// settings) and its keychain key, then restarts into an empty index. Source files, models,
+/// and logs stay.
+#[tauri::command]
+pub async fn delete_all_indexes<R: Runtime>(app: AppHandle<R>) -> Result<(), AppError> {
+    let failed = || AppError {
+        code: ErrorCode::DeleteFailed,
+        message: "indexes could not be deleted".into(),
+    };
+    let dir = app.path().app_data_dir().map_err(|_| failed())?;
+    if let Some(q) = app.try_state::<Arc<IndexQueue>>() {
+        q.cancel();
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::storage::db::destroy(
+            &crate::storage::db::db_path(&dir),
+            &crate::storage::keychain::KeychainKeyProvider,
+        )
+    })
+    .await
+    .map_err(|_| failed())?
+    .map_err(|e| {
+        tracing::warn!(error = %e, "delete all indexes failed");
+        failed()
+    })?;
+    tracing::info!("all indexes deleted; restarting");
+    app.restart()
+}
+
+#[tauri::command]
+pub fn get_about() -> crate::about::About {
+    crate::about::about()
+}
+
+#[tauri::command]
+pub fn read_legal_text(which: crate::about::LegalText) -> &'static str {
+    crate::about::legal_text(which)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

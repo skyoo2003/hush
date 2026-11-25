@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+pub mod about;
 pub mod brand;
 pub mod commands;
 pub mod desktop;
+pub mod diagnostics;
 pub mod error;
 pub mod ingest;
 pub mod net;
@@ -48,6 +50,10 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::export_pack,
         commands::check_for_update,
         commands::install_update,
+        commands::export_diagnostics,
+        commands::delete_all_indexes,
+        commands::get_about,
+        commands::read_legal_text,
     ])
     // No window is granted a dialog permission: only `add_watched_folder` opens the picker.
     .plugin(tauri_plugin_dialog::init())
@@ -56,7 +62,9 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
     .manage(update::Pending::default())
     .on_window_event(desktop::on_window_event)
     .setup(|app| {
-        init_tracing(&app.path().app_log_dir()?)?;
+        let log_dir = app.path().app_log_dir()?;
+        init_tracing(&log_dir)?;
+        diagnostics::install_panic_hook(log_dir.join(diagnostics::CRASH_DIR));
         let labels: Vec<String> = app.webview_windows().into_keys().collect();
         tracing::info!(?labels, "app started");
         let db = open_storage(&app.path().app_data_dir()?)
@@ -132,7 +140,7 @@ fn start_indexing<R: Runtime>(
     }
     let svc = Services {
         db: db.clone(),
-        registry: ingest::parser::ParserRegistry::new(),
+        registry: ingest::parser::ParserRegistry::full(&pdfium_path()),
         chunker: ingest::chunker::ChunkerConfig::default(),
         counter: embedder.clone(),
         embedder,
@@ -190,13 +198,33 @@ fn start_indexing<R: Runtime>(
     app.manage(queue);
 }
 
-fn open_storage(dir: &std::path::Path) -> Result<storage::db::Db, storage::error::StorageError> {
-    std::fs::create_dir_all(dir)?;
-    let path = dir.join(format!("{}.db", brand::APP_SLUG));
-    storage::db::open_or_create(&path, &storage::keychain::KeychainKeyProvider)
+/// The bundled PDFium: `Contents/Frameworks`, beside `Contents/MacOS/<exe>`. A debug build run
+/// from `target/` falls back to the copy `scripts/fetch-pdfium.sh` put in `vendor/`.
+fn pdfium_path() -> std::path::PathBuf {
+    const LIB: &str = "libpdfium.dylib";
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|e| Some(e.parent()?.parent()?.join("Frameworks").join(LIB)))
+        .unwrap_or_default();
+    #[cfg(debug_assertions)]
+    if !bundled.exists() {
+        return std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("vendor/pdfium/lib")
+            .join(LIB);
+    }
+    bundled
 }
 
-fn init_tracing(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+fn open_storage(dir: &std::path::Path) -> Result<storage::db::Db, storage::error::StorageError> {
+    std::fs::create_dir_all(dir)?;
+    storage::db::open_or_create(
+        &storage::db::db_path(dir),
+        &storage::keychain::KeychainKeyProvider,
+    )
+}
+
+/// Daily log files in `dir`, seven kept. Public for the privacy audit test.
+pub fn init_tracing(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     // Create first: the appender prunes old files at build and prints an error if the dir is missing.
     std::fs::create_dir_all(dir)?;
     let appender = RollingFileAppender::builder()
@@ -316,6 +344,10 @@ mod tests {
             "set_theme",
             "dismiss_sponsor_banner",
             "open_sponsor",
+            "export_diagnostics",
+            "delete_all_indexes",
+            "get_about",
+            "read_legal_text",
         ] {
             assert_acl_denied(invoke(&quick, cmd));
         }
@@ -387,6 +419,15 @@ mod tests {
         assert_eq!(err["code"], "update_failed", "got {err}");
         assert!(app.state::<net::Client>().guard().is_enabled());
         assert_eq!(app.state::<net::Client>().sent_count(), 0);
+    }
+
+    #[test]
+    fn the_app_registry_indexes_pdfs_and_images() {
+        // v0.1.0 indexed only txt, md, and docx: the app never registered these parsers.
+        let reg = ingest::parser::ParserRegistry::full(&pdfium_path());
+        for ext in ["pdf", "png", "jpg", "jpeg", "txt", "md", "docx"] {
+            assert!(reg.supports(ext), "{ext}");
+        }
     }
 
     #[test]

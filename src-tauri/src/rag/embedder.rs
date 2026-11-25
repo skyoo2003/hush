@@ -18,7 +18,9 @@ use super::error::RagError;
 use crate::ingest::chunker::TokenCounter;
 use crate::security::paths::ScopedPath;
 
-pub const BATCH: usize = 32;
+/// Passages per forward pass. Attention memory grows with batch x 512 tokens: indexing a 610-page
+/// PDF peaked at 4.4 GB RSS with 32 and 1.9 GB with 8, at the same speed (docs/benchmarks.md).
+pub const BATCH: usize = 8;
 const MAX_TOKENS: usize = 512;
 /// The model's weights are dropped after this long without an embed, and reloaded on the next.
 pub const MODEL_IDLE: Duration = Duration::from_secs(10 * 60);

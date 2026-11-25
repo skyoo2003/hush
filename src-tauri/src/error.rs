@@ -46,6 +46,10 @@ pub enum ErrorCode {
     /// The update has no valid signature from the configured key for the announced version.
     UpdateSignatureInvalid,
     UpdateFailed,
+    /// The diagnostics zip could not be written.
+    DiagnosticsFailed,
+    /// The index DB or its keychain key could not be deleted.
+    DeleteFailed,
 }
 
 impl AppError {
