@@ -4,3 +4,4 @@ dist
 docs/progress.md
 # Model weights: scripts/fetch-models.sh downloads them; only models/catalog.json is tracked.
 models/*/
+!models/licenses/

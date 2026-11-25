@@ -46,17 +46,21 @@ export function modelErrorText(e: unknown): string {
 	}
 }
 
-export function importText(r: ImportedFile, models: ModelInfo[]): string {
-	if (r.modelInstalled) return t("models.installed", { id: r.id });
-	const left = models
-		.find((m) => m.id === r.id)
-		?.files.filter((f) => !f.installed && f.name !== r.name)
-		.map((f) => f.name);
-	return left?.length
-		? t("models.importedNeeds", {
-				name: r.name,
-				id: r.id,
-				left: left.join(", "),
-			})
-		: t("models.imported", { name: r.name, id: r.id });
+/** One sentence per model; a kit lists several files of each model, and the last one is current. */
+export function importText(rs: ImportedFile[], models: ModelInfo[]): string {
+	const last = new Map(rs.map((r) => [r.id, r]));
+	return [...last.values()]
+		.map((r) => {
+			if (r.modelInstalled) return t("models.installed", { id: r.id });
+			const got = rs.filter((x) => x.id === r.id).map((x) => x.name);
+			const left = models
+				.find((m) => m.id === r.id)
+				?.files.filter((f) => !f.installed && !got.includes(f.name))
+				.map((f) => f.name);
+			const name = got.join(", ");
+			return left?.length
+				? t("models.importedNeeds", { name, id: r.id, left: left.join(", ") })
+				: t("models.imported", { name, id: r.id });
+		})
+		.join(" ");
 }

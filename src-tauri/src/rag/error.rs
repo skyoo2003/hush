@@ -62,3 +62,13 @@ impl From<crate::net::error::NetError> for ModelError {
         }
     }
 }
+
+/// A zip that does not parse is a damaged kit, like a file whose hash does not match.
+impl From<zip::result::ZipError> for ModelError {
+    fn from(e: zip::result::ZipError) -> Self {
+        match e {
+            zip::result::ZipError::Io(e) => Self::Io(e),
+            _ => Self::HashMismatch,
+        }
+    }
+}

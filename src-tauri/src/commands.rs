@@ -637,11 +637,12 @@ pub fn cancel_model_download(id: String, models: State<'_, ModelManager>) -> boo
 }
 
 /// Opens the native file picker from Rust, so no path comes from the webview, then installs the
-/// picked file if its sha256 is in the catalog. None if the user cancelled the picker.
+/// picked file, or each file of a picked models kit, if its sha256 is in the catalog. None if the
+/// user cancelled the picker.
 #[tauri::command]
 pub async fn import_model_file<R: Runtime>(
     app: AppHandle<R>,
-) -> Result<Option<ImportedFile>, AppError> {
+) -> Result<Option<Vec<ImportedFile>>, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let Some(picked) = app.dialog().file().blocking_pick_file() else {
             return Ok(None);
@@ -653,7 +654,7 @@ pub async fn import_model_file<R: Runtime>(
             .try_state::<ModelManager>()
             .ok_or_else(|| AppError::internal("app is not ready"))?;
         let imported = models.import(&path).map_err(model_error)?;
-        if imported.model_installed {
+        if imported.iter().any(|f| f.model_installed) {
             crate::load_model(&app);
         }
         Ok(Some(imported))

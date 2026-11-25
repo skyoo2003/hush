@@ -88,6 +88,24 @@ jobs:
             out/release-notes.md
           if-no-files-found: error
 
+  models-kit:
+    # docs/offline-install.md. Fetches the pinned weights from huggingface.co and checks each sha256
+    # against models/catalog.json; no secrets, and nothing from the app build.
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh scripts/make-models-kit.sh "${GITHUB_REF_NAME#v}" kit
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: models-kit
+          path: kit/*.zip
+          if-no-files-found: error
+          compression-level: 0
 
   sign:
     # Holds the release certificate. Runs only this repository's scripts and Apple's tools on the built
@@ -167,7 +185,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [build, sign, sign-update]
+    needs: [build, models-kit, sign, sign-update]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the draft release
@@ -186,6 +204,10 @@ jobs:
         with:
           name: update
           path: update
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: models-kit
+          path: assets
       - name: SHA256SUMS
         run: |
           mv extras/extras/* assets/

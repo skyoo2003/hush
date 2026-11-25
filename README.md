@@ -54,6 +54,8 @@ It is not in the Mac App Store, whose terms conflict with the GPL. Each release 
 
 Releases are signed with the project's own certificate and not notarized yet: notarization needs the paid Apple Developer Program, the first [sponsorship goal](docs/funding.md). The Homebrew cask handles this for you. If you open the DMG yourself, macOS blocks the first launch; open **System Settings > Privacy & Security** and click **Open Anyway**. Check the DMG against the release's `SHA256SUMS` and attestation first ([docs/building.md](docs/building.md#checking-an-official-build)).
 
+For a Mac with no network, bring the DMG and the release's `models-kit-X.Y.Z.zip` on a USB drive, as [docs/offline-install.md](docs/offline-install.md) describes.
+
 ## Roadmap
 
 Work follows a 12-week plan to v1.0 in [docs/roadmap.md](docs/roadmap.md), and [CHANGELOG.md](CHANGELOG.md) records what has landed. Planned features:
