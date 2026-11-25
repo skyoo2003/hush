@@ -754,6 +754,7 @@ Design sessions need to see every screen and state without the Rust backend, a r
 - The harness shows WebKit, not WKWebView: no native vibrancy, window chrome, or tray. Those still need `verify-locite` on the real app.
 - Q&A, compare, and the source viewer have no IPC contract yet, so they have no fixtures. They are added with their commands.
 - `playwright install webkit` downloads a browser on a developer machine. The app never runs it.
+- `scripts/check-supporter.sh` skips `src/dev`, as it skips tests: the mock stores and returns `settings.supporter` like `commands.rs` and never ships. This amends the file list in ADR-020.
 
 ### New dependencies
 

@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # The self-reported supporter flag unlocks nothing (absolute rule 8): outside tests, only the
 # files below may name it. commands.rs stores and returns it, src/ipc/Settings.ts is its
-# generated type, and SponsorPanel.tsx shows the switch and the thank-you badge.
+# generated type, and SponsorPanel.tsx shows the switch and the thank-you badge. src/dev (the UI
+# harness mock, never in a build: CI greps dist/ for it) stores and returns it like commands.rs (ADR-023).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,7 +16,7 @@ while IFS= read -r f; do
     hits+="$f"$'\n'
   fi
 done < <(find src-tauri/src -name '*.rs')
-hits+=$(grep -rlw supporter src --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude='*.test.tsx' || true)
+hits+=$(grep -rlw supporter src --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude='*.test.tsx' | grep -v '^src/dev/' || true)
 
 bad=""
 while IFS= read -r f; do
