@@ -5,9 +5,8 @@
 # Creates or updates (idempotent):
 #   - environment `release`: the admin running this is the required reviewer, deployments only from v* tags;
 #   - tag ruleset `release tags`: only the repository admin role may create, move, or delete refs/tags/v*.
-# The signing secrets are then added to the `release` environment by hand: APPLE_CERTIFICATE,
-# APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_API_KEY_ID, APPLE_API_ISSUER, APPLE_API_KEY
-# (ADR-021), and TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD (ADR-022).
+# The updater key is then added to the `release` environment by hand: TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD (ADR-022).
 set -euo pipefail
 [ $# -eq 1 ] || { echo "usage: setup-release-environment.sh <owner/repo>" >&2; exit 2; }
 repo=$1

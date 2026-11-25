@@ -1,6 +1,6 @@
 # Building Locite yourself
 
-Official builds are signed, notarized, and published on GitHub Releases and Homebrew by [`.github/workflows/release.yml`](../.github/workflows/release.yml). Every release also carries the source archive it was built from. This repository is the complete source of every official build, and the GPL gives you the right to build, change, and run it yourself.
+Official builds are ad-hoc signed (not notarized, [ADR-021](decisions.md)) and published on GitHub Releases and Homebrew by [`.github/workflows/release.yml`](../.github/workflows/release.yml). Every release also carries the source archive it was built from. This repository is the complete source of every official build, and the GPL gives you the right to build, change, and run it yourself.
 
 ## Requirements
 
@@ -30,13 +30,13 @@ Then:
 pnpm install --frozen-lockfile
 bash scripts/fetch-pdfium.sh   # pinned PDFium, SHA-256 checked; the app itself never downloads it
 pnpm tauri build --bundles app --target aarch64-apple-darwin
-SIGN_IDENTITY=- bash scripts/sign-macos.sh src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Locite.app
+bash scripts/sign-macos.sh src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Locite.app
 bash scripts/check-signatures.sh src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Locite.app
 ```
 
-`sign-macos.sh` with `SIGN_IDENTITY=-` ad-hoc signs every library and then the app, without notarization. For a development build with reload, run `pnpm tauri dev` instead.
+`sign-macos.sh` ad-hoc signs every library and then the app, exactly as the release workflow does; add an output folder (`sign-macos.sh <App.app> out`) to also get the DMG and the updater archive. For a development build with reload, run `pnpm tauri dev` instead.
 
-Gatekeeper does not trust an ad-hoc signature. A build you made on this Mac carries no quarantine flag and opens normally. If you copied it from somewhere else, open it with right-click, then **Open**, or clear the flag with `xattr -dr com.apple.quarantine Locite.app`. Do this only for a build you made yourself.
+Gatekeeper does not trust an ad-hoc signature. A build you made on this Mac carries no quarantine flag and opens normally. If you copied it from somewhere else, open **System Settings > Privacy & Security** after the first blocked launch and click **Open Anyway**, or clear the flag with `xattr -dr com.apple.quarantine Locite.app`. Do this only for a build you made yourself or an official one you checked as below.
 
 An ad-hoc signature changes on every build, so the login keychain asks for your password again to release the database key. [CONTRIBUTING.md](../CONTRIBUTING.md) shows how to sign with your own identity instead.
 
@@ -59,12 +59,12 @@ gh attestation verify locite-X.Y.Z-source.tar.gz --repo skyoo2003/locite
 
 The attestation proves the file was produced by `release.yml` in this repository from that tag.
 
-To compare an official app with your own build of the same tag, copy both, strip the signatures, and diff:
+To compare an official app with your own build of the same tag, copy both, strip the signatures (both are ad-hoc, so they differ only by content hash), and diff:
 
 ```sh
 codesign --remove-signature Official.app/Contents/MacOS/locite Official.app/Contents/Frameworks/libpdfium.dylib
 codesign --remove-signature Mine.app/Contents/MacOS/locite Mine.app/Contents/Frameworks/libpdfium.dylib
-diff -r -x _CodeSignature -x CodeResources Official.app Mine.app   # signature files differ by signer
+diff -r -x _CodeSignature -x CodeResources Official.app Mine.app   # signature files hold content hashes
 ```
 
 Builds are not bit-identical yet. Building one commit twice on one Mac in two directories (measured 2026-11-25) gave bundles that matched byte for byte after the signatures were removed, except `Contents/MacOS/locite`: the vendored OpenSSL under SQLCipher embeds its build time and the absolute build directory, and the Mach-O UUID changes with them. So expect `diff -r` to report only that executable. Its link to the source is the tag and the attestation, not a byte comparison.
