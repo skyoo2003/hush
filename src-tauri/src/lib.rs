@@ -381,9 +381,8 @@ mod tests {
         );
         let err = invoke_with(&main, "download_model", unknown).expect_err("unknown id");
         assert_eq!(err["code"], "not_in_catalog", "got {err}");
-        // No public key is committed yet, so a check fails closed before any request.
-        let err = invoke(&main, "check_for_update").expect_err("no update key");
-        assert_eq!(err["code"], "updater_not_configured", "got {err}");
+        let err = invoke(&main, "check_for_update").expect_err("air-gap is on");
+        assert_eq!(err["code"], "air_gap_enabled", "got {err}");
         let err = invoke(&main, "install_update").expect_err("nothing checked");
         assert_eq!(err["code"], "update_failed", "got {err}");
         assert!(app.state::<net::Client>().guard().is_enabled());
