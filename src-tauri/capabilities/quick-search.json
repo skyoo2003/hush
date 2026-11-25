@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "quick-search",
-  "description": "Quick-search popup: search, open or reveal, and cite sources, index status, hide itself.",
+  "description": "Quick-search popup: search, open or reveal, and cite sources, index status, theme and accent, hide itself.",
   "windows": ["quick-search"],
   "permissions": [
     "allow-search",
@@ -9,6 +9,7 @@
     "allow-copy-citation",
     "allow-hide-window",
     "allow-get-index-status",
+    "allow-get-appearance",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

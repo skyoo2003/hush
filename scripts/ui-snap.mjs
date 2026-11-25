@@ -49,7 +49,8 @@ try {
 
   for (const { name, href } of todo) {
     const theme = name.includes("-dark-") ? "dark" : "light";
-    await page.emulateMedia({ colorScheme: theme });
+    const contrast = name.includes("increase-contrast") ? "more" : "no-preference";
+    await page.emulateMedia({ colorScheme: theme, contrast });
     await page.goto(base + href);
     const frame = page.frameLocator("#window");
     const html = frame.locator("html[data-harness]");

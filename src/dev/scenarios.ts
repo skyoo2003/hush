@@ -3,16 +3,20 @@
 // that lead to it; /__harness lists them and `pnpm ui:snap` photographs each one.
 import { DOCUMENTS } from "./fixtures/documents";
 import { models } from "./fixtures/state";
+import type { Accent } from "../ipc/Accent";
+import type { Theme } from "../ipc/Theme";
 import type { Fixture } from "./mockIpc";
 
 export const LANGS = ["en", "ko"] as const;
 export type Lang = (typeof LANGS)[number];
 export const THEMES = ["light", "dark"] as const;
 
-/** Real window sizes from tauri.conf.json and desktop.rs. */
+/** Real window sizes from tauri.conf.json and desktop.rs. "tokens" is the harness's own page
+ * (TokensPage.tsx), tall enough for every token and with no strings to translate. */
 export const WINDOWS = {
-	"quick-search": { label: "quick-search", width: 680, height: 460 },
-	main: { label: "main", width: 1080, height: 720 },
+	"quick-search": { label: "quick-search", width: 680, height: 460, langs: LANGS },
+	main: { label: "main", width: 1080, height: 720, langs: LANGS },
+	tokens: { label: "main", width: 1080, height: 1960, langs: ["en"] },
 } as const;
 export type Screen = keyof typeof WINDOWS;
 
@@ -20,6 +24,7 @@ type Text = string | Record<Lang, string>;
 export type Step =
 	| { fill: string; text: Text }
 	| { click: string }
+	| { select: string; value: string }
 	| { key: string; meta?: boolean }
 	| { scroll: string }
 	| { wait: string };
@@ -61,6 +66,17 @@ const airGapOff = (f: Fixture) => {
 	f.settings.airGap = false;
 };
 
+// Tokens page: one state per theme with each accent, the live switch, and Increase Contrast
+// (`pnpm ui:snap` emulates prefers-contrast: more for states named "increase-contrast").
+const tokens = (theme: Theme, accent: Accent, note: string): Scenario => ({
+	screen: "tokens",
+	state: `${theme}-${accent}`,
+	note,
+	setup: (f) => {
+		f.settings.theme = theme;
+		f.settings.accent = accent;
+	},
+});
 export const SCENARIOS: Scenario[] = [
 	// Quick search
 	{ screen: "quick-search", state: "empty", note: "Just opened: hint only" },
@@ -460,6 +476,27 @@ export const SCENARIOS: Scenario[] = [
 		setup: (f) => {
 			f.fail["*"] = "internal";
 		},
+	},
+	tokens("system", "system", "Follows the system scheme, macOS Blue accent"),
+	tokens("system", "brand", "Follows the system scheme, brand indigo"),
+	tokens("light", "brand", "Light"),
+	tokens("dark", "brand", "Dark"),
+	tokens("oled_dark", "brand", "OLED dark"),
+	tokens("terminal", "brand", "Terminal"),
+	{
+		...tokens("system", "brand", ""),
+		state: "switched",
+		note: "System/brand, then Dark, System accent, and a system change to Pink",
+		steps: [
+			{ select: "#pick-theme", value: "dark" },
+			{ select: "#pick-accent", value: "system" },
+			{ select: "#pick-system-accent", value: "pink" },
+		],
+	},
+	{
+		...tokens("system", "system", ""),
+		state: "increase-contrast",
+		note: "prefers-contrast: more",
 	},
 ];
 

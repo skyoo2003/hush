@@ -1,0 +1,27 @@
+{
+  "$comment": "Tokens only (docs/design/DESIGN.md): no raw colors, no px font sizes, no primitives outside src/ui/tokens.css.",
+  "rules": {
+    "color-no-hex": true,
+    "color-named": "never",
+    "function-disallowed-list": ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color"],
+    "declaration-property-unit-disallowed-list": {
+      "font-size": ["px"],
+      "font": ["px"],
+      "line-height": ["px"]
+    },
+    "declaration-property-value-disallowed-list": {
+      "/.*/": ["/var\\(--prim-/", "/\\b(Canvas|CanvasText|Highlight|HighlightText|GrayText|ButtonFace|ButtonText|Field|FieldText|LinkText|Mark|MarkText|AccentColor)\\b/"]
+    }
+  },
+  "overrides": [
+    {
+      "files": ["src/ui/tokens.css"],
+      "rules": {
+        "color-no-hex": null,
+        "function-disallowed-list": null,
+        "declaration-property-unit-disallowed-list": null,
+        "declaration-property-value-disallowed-list": null
+      }
+    }
+  ]
+}

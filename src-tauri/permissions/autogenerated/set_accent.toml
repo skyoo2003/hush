@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-accent"
+description = "Enables the set_accent command without any pre-configured scope."
+commands.allow = ["set_accent"]
+
+[[permission]]
+identifier = "deny-set-accent"
+description = "Denies the set_accent command without any pre-configured scope."
+commands.deny = ["set_accent"]

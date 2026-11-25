@@ -8,10 +8,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "biome lint src",
+    "lint": "biome lint src && stylelint \"src/**/*.css\"",
     "test": "vitest run --passWithNoTests",
     "tauri": "tauri",
-    "ui:snap": "node scripts/ui-snap.mjs"
+    "ui:snap": "node scripts/ui-snap.mjs",
+    "contrast": "node scripts/check-contrast.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
@@ -24,6 +25,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "playwright": "^1.65.1",
+    "stylelint": "^18.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.1"

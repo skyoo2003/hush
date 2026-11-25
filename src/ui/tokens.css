@@ -1,0 +1,254 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Design tokens (docs/design/DESIGN.md). Three layers:
+ *   primitives  --prim-*   raw values; only this file may use them
+ *   semantic    --bg-* --fg-* --border-* --accent ...   what components use for color
+ *   non-color   --font-* --text-* --space-* --radius-* --shadow-* --duration-* --ease-*
+ * A theme is a `data-theme` on <html> that overrides semantic tokens only. "system" (or no
+ * attribute) is light or dark by prefers-color-scheme. src/ui/appearance.ts sets data-theme and,
+ * for the system accent, --accent and --fg-on-accent inline. scripts/check-contrast.ts checks it. */
+
+:root {
+	/* Primitives: warm-neutral grays, light */
+	--prim-gray-l1: #fdfdfc;
+	--prim-gray-l2: #f8f7f5;
+	--prim-gray-l3: #f1f0ee;
+	--prim-gray-l4: #e9e8e5;
+	--prim-gray-l5: #e1e0dc;
+	--prim-gray-l6: #d8d6d2;
+	--prim-gray-l7: #cbc9c4;
+	--prim-gray-l8: #b5b3ac;
+	--prim-gray-l9: #8c8a83;
+	--prim-gray-l10: #6b6963;
+	--prim-gray-l11: #57554f;
+	--prim-gray-l12: #1f1e1b;
+	/* Primitives: warm-neutral grays, dark */
+	--prim-gray-d1: #121211;
+	--prim-gray-d2: #1a1918;
+	--prim-gray-d3: #232220;
+	--prim-gray-d4: #2b2a27;
+	--prim-gray-d5: #33322f;
+	--prim-gray-d6: #3d3c38;
+	--prim-gray-d7: #4b4a45;
+	--prim-gray-d8: #63615b;
+	--prim-gray-d9: #75736c;
+	--prim-gray-d10: #9a988f;
+	--prim-gray-d11: #bcbab3;
+	--prim-gray-d12: #eeede9;
+	--prim-black: #000000;
+	--prim-white: #ffffff;
+	/* Primitives: the app's own accent, muted indigo */
+	--prim-indigo-1: #fbfbfe;
+	--prim-indigo-2: #f5f6fc;
+	--prim-indigo-3: #eceefa;
+	--prim-indigo-4: #dfe2f6;
+	--prim-indigo-5: #d0d4f0;
+	--prim-indigo-6: #bcc1e6;
+	--prim-indigo-7: #a1a7d8;
+	--prim-indigo-8: #7d84c4;
+	--prim-indigo-9: #5b62ad;
+	--prim-indigo-10: #4f5599;
+	--prim-indigo-11: #454b86;
+	--prim-indigo-12: #23264a;
+	/* Primitives: status, a light-theme and a dark-theme value each */
+	--prim-green-l: #1e7a3c;
+	--prim-green-d: #5cc97f;
+	--prim-amber-l: #8a5800;
+	--prim-amber-d: #e9a73d;
+	--prim-red-l: #c22f2a;
+	--prim-red-d: #ff6f66;
+	--prim-blue-l: #1f62c9;
+	--prim-blue-d: #6aa7ff;
+	--prim-yellow-l: #fbe38e;
+	--prim-yellow-d: #6b5714;
+	/* Primitives: Terminal theme */
+	--prim-term-bg: #0a0f0a;
+	--prim-term-bg-raised: #111a11;
+	--prim-term-bg-hover: #182618;
+	--prim-term-line: #1f3a24;
+	--prim-term-green: #39ff7a;
+	--prim-term-green-dim: #2bc75f;
+	--prim-term-green-faint: #24a650;
+	--prim-term-amber: #ffc23d;
+	--prim-term-red: #ff6b5e;
+
+	/* Non-color */
+	--font-text:
+		-apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo",
+		sans-serif;
+	--font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+	--text-large-title-size: 26px;
+	--text-large-title-line: 32px;
+	--text-large-title-weight: 400;
+	--text-title1-size: 22px;
+	--text-title1-line: 26px;
+	--text-title1-weight: 400;
+	--text-title2-size: 17px;
+	--text-title2-line: 22px;
+	--text-title2-weight: 400;
+	--text-title3-size: 15px;
+	--text-title3-line: 20px;
+	--text-title3-weight: 400;
+	--text-headline-size: 13px;
+	--text-headline-line: 16px;
+	--text-headline-weight: 600;
+	--text-body-size: 13px;
+	--text-body-line: 16px;
+	--text-body-weight: 400;
+	--text-callout-size: 12px;
+	--text-callout-line: 15px;
+	--text-callout-weight: 400;
+	--text-subheadline-size: 11px;
+	--text-subheadline-line: 14px;
+	--text-subheadline-weight: 400;
+	--text-footnote-size: 10px;
+	--text-footnote-line: 13px;
+	--text-footnote-weight: 400;
+	--space-4: 4px;
+	--space-8: 8px;
+	--space-12: 12px;
+	--space-16: 16px;
+	--space-20: 20px;
+	--space-24: 24px;
+	--space-32: 32px;
+	--radius-control: 6px;
+	--radius-card: 10px;
+	--radius-panel: 12px;
+	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 4px 12px rgb(0 0 0 / 0.14);
+	--shadow-panel: 0 0 0 0.5px rgb(0 0 0 / 0.16), 0 12px 32px rgb(0 0 0 / 0.22);
+	--duration-fast: 120ms;
+	--duration-normal: 180ms;
+	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--focus-ring-width: 3px;
+
+	/* Semantic: light (the default) */
+	color-scheme: light;
+	--bg-window: var(--prim-gray-l2);
+	--bg-content: var(--prim-white);
+	--bg-elevated: var(--prim-white);
+	--bg-sidebar: transparent;
+	--bg-hover: var(--prim-gray-l3);
+	--bg-selected: var(--accent);
+	--bg-selected-inactive: var(--prim-gray-l5);
+	--fg-primary: var(--prim-gray-l12);
+	--fg-secondary: var(--prim-gray-l11);
+	--fg-tertiary: var(--prim-gray-l10);
+	--fg-on-accent: var(--prim-white);
+	--border-subtle: var(--prim-gray-l6);
+	--border-strong: var(--prim-gray-l8);
+	--accent: var(--prim-indigo-9);
+	--accent-soft: color-mix(in srgb, var(--accent) 16%, var(--bg-content));
+	--focus-ring: color-mix(in srgb, var(--accent) 55%, transparent);
+	--success: var(--prim-green-l);
+	--warning: var(--prim-amber-l);
+	--danger: var(--prim-red-l);
+	--highlight-mark: var(--prim-yellow-l);
+	--overlay-bbox: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+:root[data-theme="light"] {
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--bg-window: var(--prim-gray-d2);
+	--bg-content: var(--prim-gray-d1);
+	--bg-elevated: var(--prim-gray-d3);
+	--bg-hover: var(--prim-gray-d4);
+	--bg-selected-inactive: var(--prim-gray-d6);
+	--fg-primary: var(--prim-gray-d12);
+	--fg-secondary: var(--prim-gray-d11);
+	--fg-tertiary: var(--prim-gray-d10);
+	--border-subtle: var(--prim-gray-d6);
+	--border-strong: var(--prim-gray-d8);
+	--accent: var(--prim-indigo-9);
+	--success: var(--prim-green-d);
+	--warning: var(--prim-amber-d);
+	--danger: var(--prim-red-d);
+	--highlight-mark: var(--prim-yellow-d);
+}
+
+/* Same declarations as [data-theme="dark"]; check-contrast.ts fails if they drift apart. */
+@media (prefers-color-scheme: dark) {
+	:root:is([data-theme="system"], :not([data-theme])) {
+		color-scheme: dark;
+		--bg-window: var(--prim-gray-d2);
+		--bg-content: var(--prim-gray-d1);
+		--bg-elevated: var(--prim-gray-d3);
+		--bg-hover: var(--prim-gray-d4);
+		--bg-selected-inactive: var(--prim-gray-d6);
+		--fg-primary: var(--prim-gray-d12);
+		--fg-secondary: var(--prim-gray-d11);
+		--fg-tertiary: var(--prim-gray-d10);
+		--border-subtle: var(--prim-gray-d6);
+		--border-strong: var(--prim-gray-d8);
+		--accent: var(--prim-indigo-9);
+		--success: var(--prim-green-d);
+		--warning: var(--prim-amber-d);
+		--danger: var(--prim-red-d);
+		--highlight-mark: var(--prim-yellow-d);
+	}
+}
+
+:root[data-theme="oled_dark"] {
+	color-scheme: dark;
+	--bg-window: var(--prim-black);
+	--bg-content: var(--prim-black);
+	--bg-elevated: var(--prim-gray-d2);
+	--bg-hover: var(--prim-gray-d3);
+	--bg-selected-inactive: var(--prim-gray-d5);
+	--fg-primary: var(--prim-gray-d12);
+	--fg-secondary: var(--prim-gray-d11);
+	--fg-tertiary: var(--prim-gray-d10);
+	--border-subtle: var(--prim-gray-d5);
+	--border-strong: var(--prim-gray-d8);
+	--accent: var(--prim-indigo-9);
+	--success: var(--prim-green-d);
+	--warning: var(--prim-amber-d);
+	--danger: var(--prim-red-d);
+	--highlight-mark: var(--prim-yellow-d);
+}
+
+:root[data-theme="terminal"] {
+	color-scheme: dark;
+	--font-text: var(--font-mono);
+	--bg-window: var(--prim-term-bg);
+	--bg-content: var(--prim-term-bg);
+	--bg-elevated: var(--prim-term-bg-raised);
+	--bg-hover: var(--prim-term-bg-hover);
+	--bg-selected-inactive: var(--prim-term-line);
+	--fg-primary: var(--prim-term-green);
+	--fg-secondary: var(--prim-term-green-dim);
+	--fg-tertiary: var(--prim-term-green-faint);
+	--fg-on-accent: var(--prim-term-bg);
+	--border-subtle: var(--prim-term-line);
+	--border-strong: var(--prim-term-green-faint);
+	--accent: var(--prim-term-green);
+	--success: var(--prim-term-green);
+	--warning: var(--prim-term-amber);
+	--danger: var(--prim-term-red);
+	--highlight-mark: var(--prim-term-line);
+}
+
+/* Increase Contrast: secondary text and borders move toward the primary text color. `:is(*, …)`
+ * lifts the specificity to that of the theme rules above, so this wins in every theme. */
+@media (prefers-contrast: more) {
+	:root:is(*, [data-theme]) {
+		--fg-secondary: color-mix(
+			in srgb,
+			var(--fg-primary) 85%,
+			var(--bg-content)
+		);
+		--fg-tertiary: color-mix(in srgb, var(--fg-primary) 75%, var(--bg-content));
+		--border-subtle: color-mix(
+			in srgb,
+			var(--fg-primary) 45%,
+			var(--bg-content)
+		);
+		--border-strong: color-mix(
+			in srgb,
+			var(--fg-primary) 70%,
+			var(--bg-content)
+		);
+	}
+}

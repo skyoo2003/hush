@@ -6,3 +6,4 @@ docs/progress.md
 models/*/
 !models/licenses/
 ui-snapshots/
+ui-snapshots-before/

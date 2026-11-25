@@ -78,8 +78,11 @@ export function baseFixture(): Fixture {
 			excludePatterns: "drafts/\n*.bak",
 			supporter: false,
 			theme: "system",
+			accent: "system",
 			sponsorBanner: false,
 		},
+		// The macOS default (Blue / Multicolor).
+		systemAccent: "#007aff",
 		folders: [
 			{
 				id: 1,

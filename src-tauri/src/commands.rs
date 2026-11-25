@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use tauri_plugin_dialog::DialogExt;
 
+use crate::appearance::{Accent, Appearance, Theme};
 use crate::brand;
 use crate::desktop::{self, ShortcutError};
 use crate::error::{AppError, ErrorCode};
@@ -395,22 +396,14 @@ pub struct Settings {
     pub supporter: bool,
     /// Every theme is selectable by everyone.
     pub theme: Theme,
+    pub accent: Accent,
     /// Show the one-time milestone banner: 100 searches or 100 indexed documents, not dismissed.
     pub sponsor_banner: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
-#[serde(rename_all = "snake_case")]
-pub enum Theme {
-    #[default]
-    System,
-    OledDark,
-    Terminal,
-}
-
 const SUPPORTER_SETTING: &str = "supporter";
 const THEME_SETTING: &str = "theme";
+const ACCENT_SETTING: &str = "accent";
 const BANNER_DISMISSED_SETTING: &str = "sponsor_banner_dismissed";
 const MILESTONE: i64 = 100;
 
@@ -420,6 +413,15 @@ fn flag(db: &Db, key: &str) -> bool {
         .ok()
         .flatten()
         .is_some_and(|v| v == "1")
+}
+
+/// A JSON setting, or its default when unset or unreadable.
+fn saved<T: serde::de::DeserializeOwned + Default>(db: &Db, key: &str) -> T {
+    db.setting(key)
+        .ok()
+        .flatten()
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default()
 }
 
 fn sponsor_banner(db: &Db) -> bool {
@@ -442,16 +444,11 @@ pub fn get_settings<R: Runtime>(
         tracing::warn!(error = %e, "exclude patterns not read");
         None
     });
-    let theme = db
-        .setting(THEME_SETTING)
-        .ok()
-        .flatten()
-        .and_then(|v| serde_json::from_str(&v).ok())
-        .unwrap_or_default();
     Settings {
         exclude_patterns: exclude_patterns.unwrap_or_default(),
         supporter: flag(&db, SUPPORTER_SETTING),
-        theme,
+        theme: saved(&db, THEME_SETTING),
+        accent: saved(&db, ACCENT_SETTING),
         sponsor_banner: sponsor_banner(&db),
         air_gap: net.guard().is_enabled(),
         shortcut_registered: desktop::is_registered(&app, &shortcut),
@@ -550,7 +547,29 @@ pub fn set_theme<R: Runtime>(
 ) -> Result<Settings, AppError> {
     let value = serde_json::to_string(&theme).map_err(|e| AppError::internal(&e.to_string()))?;
     save(&db, THEME_SETTING, &value)?;
-    Ok(get_settings(app, db, net))
+    let s = get_settings(app.clone(), db, net);
+    Appearance::new(s.theme, s.accent).emit(&app);
+    Ok(s)
+}
+
+#[tauri::command]
+pub fn set_accent<R: Runtime>(
+    app: AppHandle<R>,
+    accent: Accent,
+    db: State<'_, Arc<Db>>,
+    net: State<'_, net::Client>,
+) -> Result<Settings, AppError> {
+    let value = serde_json::to_string(&accent).map_err(|e| AppError::internal(&e.to_string()))?;
+    save(&db, ACCENT_SETTING, &value)?;
+    let s = get_settings(app.clone(), db, net);
+    Appearance::new(s.theme, s.accent).emit(&app);
+    Ok(s)
+}
+
+/// Theme and accent for every window; the quick-search window cannot read the other settings.
+#[tauri::command]
+pub fn get_appearance(db: State<'_, Arc<Db>>) -> Appearance {
+    Appearance::new(saved(&db, THEME_SETTING), saved(&db, ACCENT_SETTING))
 }
 
 #[tauri::command]
