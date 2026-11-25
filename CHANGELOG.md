@@ -4,6 +4,8 @@ All notable changes to Locite are recorded here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-25
+
 ### Added
 
 - Encrypted storage: one SQLCipher database with FTS5 and sqlite-vec, keyed from the macOS Keychain.
@@ -17,3 +19,6 @@ All notable changes to Locite are recorded here. The format follows [Keep a Chan
 - Model manager: a built-in catalog with pinned SHA-256s, resumable downloads that Air-Gap refuses or stops, and manual import for offline machines (Security panel).
 - Release pipeline: tagged releases are built without secrets, then signed, notarized, and stapled after maintainer approval, and published as drafts with the source archive, an SBOM, third-party notices, SHA256SUMS, and build provenance attestations. A draft Homebrew cask is in `packaging/homebrew/`.
 - Repository governance: GPL-3.0-or-later license, contribution guide with DCO, security policy, trademark policy, and CI checks for licenses, advisories, SPDX headers, DCO sign-off, and secrets.
+
+[Unreleased]: https://github.com/skyoo2003/locite/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/skyoo2003/locite/releases/tag/v0.1.0

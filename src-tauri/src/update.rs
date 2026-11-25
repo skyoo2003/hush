@@ -458,10 +458,21 @@ mod tests {
 
     #[test]
     fn the_updater_fails_closed_without_a_public_key() {
-        // The committed tauri.conf.json has an empty key until the maintainer adds the real one.
-        assert!(matches!(
-            updater(mock_app().handle()),
-            Err(UpdateError::NotConfigured)
-        ));
+        for key in ["", "  "] {
+            let mut ctx = tauri::generate_context!(test = true);
+            ctx.config_mut()
+                .plugins
+                .0
+                .insert("updater".into(), serde_json::json!({ "pubkey": key }));
+            let app = tauri::test::mock_builder()
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .build(ctx)
+                .unwrap();
+            assert!(matches!(
+                updater(app.handle()),
+                Err(UpdateError::NotConfigured)
+            ));
+        }
+        assert!(updater(mock_app().handle()).is_ok(), "committed key");
     }
 }
