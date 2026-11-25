@@ -102,7 +102,7 @@ export function SecurityPanel() {
 		setError(null);
 		setNotice(null);
 		try {
-			const r = await invoke<ImportedFile | null>("import_model_file");
+			const r = await invoke<ImportedFile[] | null>("import_model_file");
 			if (r) setNotice(importText(r, models));
 		} catch (e) {
 			setError(modelErrorText(e));

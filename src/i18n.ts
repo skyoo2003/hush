@@ -170,7 +170,7 @@ const en = {
   "models.starting": "Starting…",
   "models.manualFiles": "Files for a manual import",
   "models.importFile": "Import a file…",
-  "models.importModelFile": "Import a model file…",
+  "models.importModelFile": "Import a model file or kit…",
   "models.airGapOnNote":
     "Air-Gap is on, so downloads are off. Import the files instead.",
   "models.firstRun.legend":
@@ -180,7 +180,7 @@ const en = {
   "models.firstRun.airGapNote":
     "Air-Gap turns back on when the download ends. Only huggingface.co and its download servers are contacted, and nothing about your documents is sent.",
   "models.firstRun.offline":
-    "On a computer with no network, download these files on another computer, copy them over, and import each one:",
+    "On a computer with no network, download the models kit zip from the release page, or these files, on another computer, copy them over, and import the kit or each file:",
   "models.imported": "Imported {name} for {id}.",
   "models.importedNeeds": "Imported {name} for {id}. Still needed: {left}.",
   "models.error.airGapEnabled":
@@ -386,7 +386,7 @@ const ko: Record<MessageKey, string> = {
   "models.starting": "시작하는 중…",
   "models.manualFiles": "직접 가져올 파일 목록",
   "models.importFile": "파일 가져오기…",
-  "models.importModelFile": "모델 파일 가져오기…",
+  "models.importModelFile": "모델 파일 또는 키트 가져오기…",
   "models.airGapOnNote":
     "에어갭이 켜져 있어 다운로드할 수 없습니다. 파일을 직접 가져오세요.",
   "models.firstRun.legend":
@@ -397,7 +397,7 @@ const ko: Record<MessageKey, string> = {
   "models.firstRun.airGapNote":
     "다운로드가 끝나면 에어갭이 다시 켜집니다. huggingface.co와 그 다운로드 서버에만 연결하며, 문서에 관한 정보는 보내지 않습니다.",
   "models.firstRun.offline":
-    "네트워크가 없는 컴퓨터라면, 다른 컴퓨터에서 아래 파일을 받아 옮긴 뒤 하나씩 가져오세요:",
+    "네트워크가 없는 컴퓨터라면, 다른 컴퓨터에서 릴리스 페이지의 모델 키트 zip이나 아래 파일을 받아 옮긴 뒤 키트 또는 파일을 하나씩 가져오세요:",
   "models.imported": "{id} 모델의 {name} 파일을 가져왔습니다.",
   "models.importedNeeds":
     "{id} 모델의 {name} 파일을 가져왔습니다. {left} 파일이 아직 더 필요합니다.",

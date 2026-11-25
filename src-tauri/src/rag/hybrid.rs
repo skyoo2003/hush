@@ -629,4 +629,50 @@ mod tests {
         assert!(!json.contains(abs.to_str().unwrap()));
         assert!(!json.contains(dir.path().to_str().unwrap()));
     }
+
+    /// docs/offline-install.md step 4 without the GUI: the real kit, an empty models folder, and
+    /// (run under `sandbox-exec` with network denied) no network.
+    #[test]
+    #[ignore = "needs LOCITE_MODELS_KIT=path/to/models-kit-VERSION.zip"]
+    fn a_real_models_kit_alone_is_enough_to_index_and_search() {
+        let kit = std::path::PathBuf::from(std::env::var_os("LOCITE_MODELS_KIT").unwrap());
+        let models = tempfile::tempdir().unwrap();
+        let mgr = crate::rag::models::ModelManager::new(models.path().into());
+        let got = mgr.import(&kit).unwrap();
+        let id = crate::rag::embedder::MODELS[0].id;
+        assert!(mgr.is_installed(id), "{got:?}");
+        let e = crate::rag::embedder::BertEmbedder::load(models.path(), id).unwrap();
+
+        let (_db_dir, db) = temp_db();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lease.txt"),
+            "Either party may end this agreement with thirty days written notice.",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("garden.txt"),
+            "Tomatoes need full sun and regular watering in summer.",
+        )
+        .unwrap();
+        let r = index_folder_once(
+            &db,
+            &ParserRegistry::new(),
+            dir.path(),
+            &ChunkerConfig::default(),
+            &e,
+            &e,
+        )
+        .unwrap();
+        assert_eq!((r.new, r.failed), (2, 0));
+        // No word in common with lease.txt, so only the embedding can find it.
+        let r = search(
+            &service(e),
+            &db,
+            "contract termination",
+            SearchMode::VectorOnly,
+            2,
+        );
+        assert_eq!(r.hits[0].file_name, "lease.txt");
+    }
 }

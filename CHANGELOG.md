@@ -4,6 +4,10 @@ All notable changes to Locite are recorded here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- Offline install: each release carries `models-kit-X.Y.Z.zip` with the redistributable embedding models, their licenses, a manifest, and `SHA256SUMS`. **Import a model file or kit…** installs the whole kit after checking every file against the catalog's SHA-256 ([docs/offline-install.md](docs/offline-install.md)).
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

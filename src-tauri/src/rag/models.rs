@@ -348,14 +348,22 @@ impl ModelManager {
         Ok(())
     }
 
-    /// Installs a file downloaded on another computer: it is copied, hashed while copying, and
-    /// renamed into place only if the copy's hash matches a catalog file.
-    pub fn import(&self, picked: &Path) -> Result<ImportedFile, ModelError> {
+    /// Installs a file downloaded on another computer, or every catalog file in a models kit
+    /// (`models-kit-{version}.zip`). Each file is copied, hashed while copying, and renamed into
+    /// place only if the copy's hash matches the built-in catalog; the kit's own manifest and
+    /// SHA256SUMS are not trusted. A kit that fails midway keeps the files already verified.
+    pub fn import(&self, picked: &Path) -> Result<Vec<ImportedFile>, ModelError> {
         // The picked folder is the scope, so a picked symlink cannot read a file elsewhere.
         let (Some(parent), Some(name)) = (picked.parent(), picked.file_name()) else {
             return Err(ModelError::NotInCatalog);
         };
         let src = ScopedPath::new(parent, Path::new(name))?;
+        if Path::new(name)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+        {
+            return self.import_kit(src.as_path());
+        }
         let size = fs::metadata(src.as_path())?.len();
         // A file of no catalog size is rejected before a byte of it is read.
         if !self
@@ -366,28 +374,77 @@ impl ModelManager {
         {
             return Err(ModelError::NotInCatalog);
         }
+        let catalog = self.catalog;
+        let file = self.install(File::open(src.as_path())?, |sha, n| {
+            catalog
+                .iter()
+                .flat_map(|m| m.files.iter().map(move |f| (m, f)))
+                .find(|(_, f)| f.sha256 == sha && f.size == n)
+        })?;
+        Ok(vec![file])
+    }
+
+    /// Installs every zip entry named `.../{id}/{name}` after a catalog file; others (manifest,
+    /// licenses, SHA256SUMS) are skipped. Entry paths are never used as output paths.
+    fn import_kit(&self, src: &Path) -> Result<Vec<ImportedFile>, ModelError> {
+        let mut zip = zip::ZipArchive::new(File::open(src)?)?;
+        let mut done = Vec::new();
+        for i in 0..zip.len() {
+            let entry = zip.by_index(i)?;
+            let path = entry.name()?.into_owned();
+            let mut parts = path.rsplit('/');
+            let (Some(name), Some(id)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let Some((m, f)) = self
+                .catalog
+                .iter()
+                .filter(|m| m.id == id)
+                .flat_map(|m| m.files.iter().map(move |f| (m, f)))
+                .find(|(_, f)| f.name == name)
+            else {
+                continue;
+            };
+            // One byte past the catalog size is enough to reject a lying entry header.
+            done.push(self.install(entry.take(f.size + 1), |sha, n| {
+                (f.sha256 == sha && f.size == n).then_some((m, f))
+            })?);
+        }
+        if done.is_empty() {
+            return Err(ModelError::NotInCatalog);
+        }
+        Ok(done)
+    }
+
+    /// Copies `r` to a temp file, then renames it to the catalog file `pick` returns for the
+    /// copy's sha256 and length. None from `pick` is a hash mismatch.
+    fn install(
+        &self,
+        r: impl Read,
+        pick: impl FnOnce(&str, u64) -> Option<(&'static CatalogModel, &'static CatalogFile)>,
+    ) -> Result<ImportedFile, ModelError> {
         fs::create_dir_all(&self.dir)?;
-        let n = self.imports.fetch_add(1, Ordering::SeqCst);
-        let tmp = self.dir.join(format!(".import-{n}.part"));
-        let r = self.import_via(src.as_path(), &tmp);
+        let tmp = self.dir.join(format!(
+            ".import-{}.part",
+            self.imports.fetch_add(1, Ordering::SeqCst)
+        ));
+        let r = self.install_via(r, &tmp, pick);
         if r.is_err() {
             let _ = fs::remove_file(&tmp);
         }
         r
     }
 
-    fn import_via(&self, src: &Path, tmp: &Path) -> Result<ImportedFile, ModelError> {
+    fn install_via(
+        &self,
+        r: impl Read,
+        tmp: &Path,
+        pick: impl FnOnce(&str, u64) -> Option<(&'static CatalogModel, &'static CatalogFile)>,
+    ) -> Result<ImportedFile, ModelError> {
         let mut out = File::create(tmp)?;
         let mut hasher = Sha256::new();
-        let n = copy_hashing(File::open(src)?, &mut hasher, |b| out.write_all(b))?;
-        let sha = hex(&hasher.finalize());
-        let (m, f) = self
-            .catalog
-            .iter()
-            .flat_map(|m| m.files.iter().map(move |f| (m, f)))
-            .find(|(_, f)| f.sha256 == sha && f.size == n)
-            // It has a catalog file's size, so it is most likely that file, damaged.
-            .ok_or(ModelError::HashMismatch)?;
+        let n = copy_hashing(r, &mut hasher, |b| out.write_all(b))?;
+        let (m, f) = pick(&hex(&hasher.finalize()), n).ok_or(ModelError::HashMismatch)?;
         out.sync_all()?;
         fs::create_dir_all(self.dir.join(&m.id))?;
         fs::rename(tmp, self.path(m, f))?;
@@ -564,6 +621,11 @@ mod tests {
                     f.name
                 );
             }
+        }
+        // scripts/make-models-kit.sh ships this file next to each redistributable model.
+        let licenses = Path::new(env!("CARGO_MANIFEST_DIR")).join("../models/licenses");
+        for m in CATALOG.iter().filter(|m| m.redistributable) {
+            assert!(licenses.join(format!("{}.txt", m.id)).is_file(), "{}", m.id);
         }
         for spec in super::super::embedder::MODELS {
             let m = find(spec.id).unwrap();
@@ -762,6 +824,8 @@ mod tests {
 
         fs::write(&picked, &data).unwrap();
         let got = mgr.import(&picked).unwrap();
+        assert_eq!(got.len(), 1);
+        let got = &got[0];
         assert_eq!((got.id.as_str(), got.name.as_str()), (ID, "f.bin"));
         assert!(got.model_installed && mgr.is_installed(ID));
         assert_eq!(
@@ -772,5 +836,94 @@ mod tests {
         let left: Vec<_> = fs::read_dir(dir.path().join("models")).unwrap().collect();
         assert_eq!(left.len(), 1);
         assert!(picked.exists());
+    }
+
+    /// A zip at `path` holding `entries` (name, bytes), stored or deflated.
+    fn kit(path: &Path, entries: &[(&str, &[u8])], deflate: bool) {
+        let mut w = zip::ZipWriter::new(File::create(path).unwrap());
+        let method = if deflate {
+            zip::CompressionMethod::Deflated
+        } else {
+            zip::CompressionMethod::Stored
+        };
+        for (name, bytes) in entries {
+            w.start_file(
+                *name,
+                zip::write::SimpleFileOptions::default().compression_method(method),
+            )
+            .unwrap();
+            w.write_all(bytes).unwrap();
+        }
+        w.finish().unwrap();
+    }
+
+    #[test]
+    fn a_kit_installs_its_catalog_files_and_skips_the_rest() {
+        let data = content();
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("models");
+        let mgr = ModelManager::with_catalog(models.clone(), catalog(1, &data));
+        for deflate in [false, true] {
+            let _ = fs::remove_dir_all(&models);
+            let picked = dir.path().join("models-kit-0.1.0.ZIP");
+            kit(
+                &picked,
+                &[
+                    ("models-kit-0.1.0/manifest.json", b"{}"),
+                    ("models-kit-0.1.0/SHA256SUMS", b"wrong sums are ignored"),
+                    ("models-kit-0.1.0/test-model/LICENSE.txt", b"MIT"),
+                    ("models-kit-0.1.0/other-model/f.bin", b"not in the catalog"),
+                    ("models-kit-0.1.0/test-model/f.bin", &data),
+                ],
+                deflate,
+            );
+            let got = mgr.import(&picked).unwrap();
+            assert_eq!(got.len(), 1);
+            assert!(got[0].model_installed && mgr.is_installed(ID));
+            assert_eq!(fs::read(models.join(ID).join("f.bin")).unwrap(), data);
+            // Only the model folder: no license, manifest, other model, or temp file.
+            let left: Vec<_> = fs::read_dir(&models).unwrap().flatten().collect();
+            assert_eq!(left.len(), 1);
+            assert_eq!(fs::read_dir(models.join(ID)).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn a_damaged_or_empty_kit_installs_nothing() {
+        let data = content();
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("models");
+        let mgr = ModelManager::with_catalog(models.clone(), catalog(1, &data));
+        let picked = dir.path().join("kit.zip");
+
+        let mut wrong = data.clone();
+        wrong[7] ^= 1;
+        kit(&picked, &[("k/test-model/f.bin", &wrong)], true);
+        assert!(matches!(mgr.import(&picked), Err(ModelError::HashMismatch)));
+        // A longer file is cut one byte past the catalog size and rejected.
+        let mut longer = data.clone();
+        longer.extend_from_slice(&data);
+        kit(&picked, &[("k/test-model/f.bin", &longer)], false);
+        assert!(matches!(mgr.import(&picked), Err(ModelError::HashMismatch)));
+        kit(&picked, &[("k/manifest.json", b"{}")], false);
+        assert!(matches!(mgr.import(&picked), Err(ModelError::NotInCatalog)));
+        fs::write(&picked, b"PK not really a zip").unwrap();
+        assert!(matches!(mgr.import(&picked), Err(ModelError::HashMismatch)));
+        assert!(!mgr.is_installed(ID));
+        assert_eq!(fs::read_dir(&models).unwrap().flatten().count(), 0);
+    }
+
+    #[test]
+    fn a_kit_entry_path_never_chooses_where_a_file_is_written() {
+        let data = content();
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("models");
+        let mgr = ModelManager::with_catalog(models.clone(), catalog(1, &data));
+        let picked = dir.path().join("kit.zip");
+        kit(&picked, &[("../../escape/test-model/f.bin", &data)], false);
+        mgr.import(&picked).unwrap();
+        assert!(mgr.is_installed(ID));
+        assert!(!dir.path().join("escape").exists());
+        assert!(!dir.path().parent().unwrap().join("escape").exists());
     }
 }

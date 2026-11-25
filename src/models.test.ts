@@ -53,11 +53,20 @@ describe("models", () => {
 
 	it("lists the files an import still needs", () => {
 		const m = model("a", "embedding", false);
-		expect(importText({ id: "a", name: "config.json", modelInstalled: false }, [m])).toBe(
+		expect(importText([{ id: "a", name: "config.json", modelInstalled: false }], [m])).toBe(
 			"Imported config.json for a. Still needed: model.safetensors.",
 		);
-		expect(importText({ id: "a", name: "config.json", modelInstalled: true }, [m])).toBe(
+		expect(importText([{ id: "a", name: "config.json", modelInstalled: true }], [m])).toBe(
 			"a is installed.",
+		);
+		const b = model("b", "embedding", false);
+		const kit = [
+			{ id: "a", name: "config.json", modelInstalled: false },
+			{ id: "b", name: "config.json", modelInstalled: false },
+			{ id: "a", name: "model.safetensors", modelInstalled: true },
+		];
+		expect(importText(kit, [m, b])).toBe(
+			"a is installed. Imported config.json for b. Still needed: model.safetensors.",
 		);
 	});
 });

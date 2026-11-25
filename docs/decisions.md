@@ -671,13 +671,14 @@ None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate
 ## ADR-021. Release pipeline
 
 - Date: 2026-11-25
-- Status: Accepted. Amended 2026-11-25: a self-signed release certificate instead of Developer ID and notarization.
+- Status: Accepted. Amended 2026-11-25: a self-signed release certificate instead of Developer ID and notarization. Amended 2026-11-25: the `models-kit` job.
 
 ### Decision
 
-- `.github/workflows/release.yml` runs only on a pushed `v*` tag. Every action is pinned by commit SHA, the workflow starts with no permissions, and each job grants only what it needs. Five jobs:
+- `.github/workflows/release.yml` runs only on a pushed `v*` tag. Every action is pinned by commit SHA, the workflow starts with no permissions, and each job grants only what it needs. Six jobs:
   1. `gate` (Linux, read-only): the tag is `vX.Y.Z`, the tagged commit is on `main`, the version in `tauri.conf.json`, `Cargo.toml`, and `package.json` equals the tag, and CHANGELOG.md has a section for it (`scripts/release-notes.sh`).
   2. `build` (macOS, read-only, no environment, no secrets): toolchain from `rust-toolchain.toml`, `pnpm install`, PDFium, `pnpm tauri build --bundles app`. It also writes the CycloneDX SBOM, `THIRD_PARTY_NOTICES.txt`, the `git archive` source tarball of the tag (checked to contain both lockfiles), and the release notes. No caches are restored, so no other workflow run can feed state into a release.
+  - `models-kit` (Linux, read-only, no secrets), beside `build`: `scripts/make-models-kit.sh` writes `models-kit-X.Y.Z.zip` for offline installs (docs/offline-install.md). It holds every embedding model in `models/catalog.json` marked `redistributable`, fetched from `huggingface.co` at the pinned revision and checked against the catalog sha256, with its license from `models/licenses/{id}.txt`, plus `manifest.json` and `SHA256SUMS`. The kit is a separate asset so the DMG stays small and a kit can be reused across app versions whose catalog is unchanged. The app's import checks every model file against its built-in catalog, never against the kit's own manifest or sums.
   3. `sign` (macOS, environment `release`): checks out the tag only for its scripts and runs `scripts/sign-release.sh`, which imports the release certificate into a temporary keychain, signs every Mach-O and the app, runs `scripts/check-signatures.sh`, writes the DMG and the updater archive, and deletes the keychain.
   4. `sign-update` (Linux, environment `release`): signs the updater archive and writes `latest.json` (ADR-022).
   5. `publish` (Linux, `contents: write`, `id-token: write`, `attestations: write`): `SHA256SUMS` over every asset; a build provenance attestation for each, including `SHA256SUMS`; a **draft** GitHub release.
