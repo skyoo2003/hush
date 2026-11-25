@@ -40,4 +40,4 @@ git switch -q -c "locite-$v"
 git add Casks/locite.rb
 git commit -q -s -m "locite $v"
 git push -q -u origin "locite-$v"
-gh pr create --repo "$tap" --title "locite $v" --body "Cask update from $repo v$v (DMG checked against SHA256SUMS and its build provenance attestation)."
+gh pr create --repo "$tap" --head "locite-$v" --base main --title "locite $v" --body "Cask update from $repo v$v (DMG checked against SHA256SUMS and its build provenance attestation)."
