@@ -732,3 +732,31 @@ Users need a way to get new versions, and the release workflow publishes to GitH
 | `tauri-plugin-updater` 2.14.1 (`default-features = false`) | Manifest parsing, minisign verification, macOS install | MIT OR Apache-2.0 | Has its own `reqwest` client; never called (CI check above). `restore_update` and `install` make no request. |
 | `minisign-verify`, `tar`, `filetime`, `xattr`, `osakit`, `objc2-osa-kit` (via the plugin) | Signature check, archive extraction, privileged install fallback | MIT, MIT OR Apache-2.0 | None |
 | `ring` 0.17, `base64` 0.23 (dev only, both already in the build graph) | Sign throwaway update packages in tests | Apache-2.0 AND ISC, MIT OR Apache-2.0 | None |
+
+## ADR-023. UI harness with mocked IPC and WebKit screenshots
+
+- Date: 2026-11-26
+- Status: Accepted
+
+### Context
+
+Design sessions need to see every screen and state without the Rust backend, a real index, or a model, and to compare before/after pixels. The frontend reaches Rust only through `invoke` and `listen`.
+
+### Decision
+
+- `src/dev/mockIpc.ts` answers every command and event the frontend uses from fixtures in `src/dev/fixtures/` (30 synthetic documents, invented text only). Its `Commands` and `Events` maps use the ts-rs types in `src/ipc/`, so `pnpm typecheck` fails when a contract changes. It uses `@tauri-apps/api/mocks`, already a dependency.
+- `src/dev/scenarios.ts` lists every screen × state as a fixture change plus user steps. `/__harness` lists them; `/__harness?screen=&state=&theme=&lang=` shows one in an iframe the size of the real window, and the iframe's `color-scheme` sets `prefers-color-scheme` inside it.
+- The `mock-ipc` Vite plugin injects `src/dev/boot.tsx` before `main.tsx` only on the dev server (`apply: "serve"`) with `VITE_MOCK_IPC=1`. Production code does not import `src/dev`. CI fails if `dist/` contains the mock's marker.
+- `pnpm ui:snap` (`scripts/ui-snap.mjs`) starts the dev server and photographs each state with Playwright's WebKit, the engine behind WKWebView, into `ui-snapshots/` (gitignored until D9 commits a baseline). Time, `Math.random`, the caret, and animations are fixed; two runs produced byte-identical files.
+
+### Consequences
+
+- The harness shows WebKit, not WKWebView: no native vibrancy, window chrome, or tray. Those still need `verify-locite` on the real app.
+- Q&A, compare, and the source viewer have no IPC contract yet, so they have no fixtures. They are added with their commands.
+- `playwright install webkit` downloads a browser on a developer machine. The app never runs it.
+
+### New dependencies
+
+| Package | Version | License | Network use | Why |
+|---|---|---|---|---|
+| playwright (dev) | 1.65.1 | Apache-2.0 | Downloads browser builds on `playwright install`; none at app runtime, not bundled | Drives WebKit for `pnpm ui:snap` |

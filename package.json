@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome lint src",
     "test": "vitest run --passWithNoTests",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "ui:snap": "node scripts/ui-snap.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
@@ -22,6 +23,7 @@
     "@tauri-apps/cli": "^2.12.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "playwright": "^1.65.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.1"
