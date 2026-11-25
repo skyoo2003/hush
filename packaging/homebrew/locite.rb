@@ -7,7 +7,7 @@ cask "locite" do
   url "https://github.com/skyoo2003/locite/releases/download/v#{version}/Locite_#{version}_aarch64.dmg"
   name "Locite"
   desc "Search and summarize local documents on-device with cited sources"
-  homepage "https://skyoo2003.github.io/locite"
+  homepage "https://github.com/skyoo2003/locite"
 
   livecheck do
     skip "Updated by scripts/bump-homebrew-tap.sh in the source repository."
