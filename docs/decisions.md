@@ -761,3 +761,34 @@ Design sessions need to see every screen and state without the Rust backend, a r
 | Package | Version | License | Network use | Why |
 |---|---|---|---|---|
 | playwright (dev) | 1.65.1 | Apache-2.0 | Downloads browser builds on `playwright install`; none at app runtime, not bundled | Drives WebKit for `pnpm ui:snap` |
+
+## ADR-024. Design tokens, themes, and the system accent
+
+- Date: 2026-11-26
+- Status: Accepted
+
+### Context
+
+D1 found no tokens, no dark mode, and themes that changed the page but not the controls or the quick-search window (docs/design/audit.md #1, #3, #22). DESIGN.md asks for semantic tokens, Increase Contrast, and the system accent pushed from Rust.
+
+### Decision
+
+- `src/ui/tokens.css` has three layers: `--prim-*` primitives (only this file uses them), semantic color tokens, and non-color tokens (fonts, type scale, spacing, radii, shadows, motion). A theme is `data-theme` on `<html>` overriding semantic tokens: `system` (prefers-color-scheme), `light`, `dark`, `oled_dark`, `terminal`. `prefers-contrast: more` moves secondary text and borders toward the primary text color in every theme.
+- `Theme` moved to `appearance.rs` and gained `light` and `dark`. A new `accent` setting is `system` or `brand` (the app's own indigo; the value avoids the brand name, absolute rule 9). `get_appearance` (both windows; theme and accent only, nothing else from settings) returns `{ theme, accent, systemAccent }`. `set_theme` and the new `set_accent` (main window) emit `ui://appearance`. An `NSSystemColorsDidChangeNotification` observer emits `ui://accent` with `NSColor.controlAccentColor` in sRGB as `#rrggbb`. `src/ui/appearance.ts` applies both in every window and uses white `--fg-on-accent`, as macOS does, unless white is under 3:1 on the accent (yellow, orange, green), then black.
+- `scripts/check-contrast.ts` (CI) resolves every theme with and without Increase Contrast from tokens.css and checks each text fg/bg pair against WCAG AA. It also fails if the system-dark block drifts from `[data-theme="dark"]`, the one place tokens are written twice (macOS 10.13 WebKit has no `light-dark()`).
+- stylelint (`pnpm lint`) rejects hex, `rgb()`-family, named and system colors, px font sizes and line heights, and `var(--prim-*)` outside tokens.css.
+
+### Consequences
+
+- The system accent is read in the app's current appearance; a dark theme picked inside the app over a light system shows the light-mode accent shade.
+- White on macOS Blue is 4.0:1, under AA's 4.5:1 for body text. The contrast check covers the brand accent (6.0:1 and up); with the system accent the app matches macOS's own selection colors.
+- Native vibrancy (`--bg-sidebar: transparent`) cannot be contrast-checked; text on it is assumed to sit on `--bg-window`.
+
+### New dependencies
+
+| Package | Version | License | Network use | Why |
+|---|---|---|---|---|
+| objc2-app-kit (macOS) | 0.3.2 | MIT | None | `NSColor.controlAccentColor`, already in the build graph through tao |
+| block2 (macOS) | 0.6.2 | MIT | None | The notification observer block, already in the build graph |
+| stylelint (dev) | 18.1.0 | MIT | None | Token-only CSS rule; never bundled |
+| argparse (dev, via stylelint → cosmiconfig → js-yaml) | 3.0.4 | PSF-2.0 | None | Transitive. PSF-2.0 is GPL-compatible per the FSF license list, so `deny.toml` allows it |

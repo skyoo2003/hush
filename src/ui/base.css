@@ -1,0 +1,119 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Base element styles on top of tokens.css (docs/design/DESIGN.md, Platform feel). */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+:root {
+	font-family: var(--font-text);
+	font-size: var(--text-body-size);
+	line-height: var(--text-body-line);
+	font-weight: var(--text-body-weight);
+	color: var(--fg-primary);
+	background: var(--bg-window);
+	-webkit-font-smoothing: antialiased;
+	-webkit-text-size-adjust: none;
+	/* Chrome is not selectable and keeps the arrow cursor, as on macOS. */
+	-webkit-user-select: none;
+	user-select: none;
+	cursor: default;
+}
+
+body {
+	margin: 0;
+}
+
+#root {
+	padding: var(--space-16);
+}
+
+/* Content stays selectable: fields, snippets, answers, the viewer, legal text. */
+input,
+textarea,
+[contenteditable],
+[data-selectable],
+[data-selectable] * {
+	-webkit-user-select: text;
+	user-select: text;
+	cursor: auto;
+}
+
+a[href] {
+	color: var(--accent);
+	cursor: pointer;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+}
+
+h1 {
+	font-size: var(--text-title1-size);
+	line-height: var(--text-title1-line);
+	font-weight: var(--text-headline-weight);
+}
+
+h2 {
+	font-size: var(--text-title2-size);
+	line-height: var(--text-title2-line);
+	font-weight: var(--text-headline-weight);
+}
+
+h3 {
+	font-size: var(--text-title3-size);
+	line-height: var(--text-title3-line);
+	font-weight: var(--text-headline-weight);
+}
+
+small {
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+	color: var(--fg-secondary);
+}
+
+code,
+kbd,
+samp,
+pre {
+	font-family: var(--font-mono);
+	font-size: inherit;
+}
+
+mark {
+	background: var(--highlight-mark);
+	color: inherit;
+}
+
+/* Scrollbars: WKWebView draws the native macOS overlay scrollbars, which follow color-scheme and
+ * the "Show scroll bars" setting. Styling ::-webkit-scrollbar would replace them with legacy
+ * always-visible bars, so there is deliberately no rule for it. */
+
+:focus-visible {
+	outline: var(--focus-ring-width) solid var(--focus-ring);
+	outline-offset: 1px;
+}
+
+:focus:not(:focus-visible) {
+	outline: none;
+}
+
+/* Reduced motion: fades only. Movement and size transitions stop; keyframe animations end at once. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		/* biome-ignore-start lint/complexity/noImportantStyles: must beat every component's transition */
+		transition-property:
+			opacity, color, background-color, border-color !important;
+		animation-duration: 1ms !important;
+		animation-iteration-count: 1 !important;
+		scroll-behavior: auto !important;
+		/* biome-ignore-end lint/complexity/noImportantStyles: - */
+	}
+}

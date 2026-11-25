@@ -39,7 +39,6 @@ export function SearchResultCard({
       role="option"
       aria-selected={selected}
       tabIndex={-1}
-      style={selected ? { outline: "2px solid Highlight" } : undefined}
       onClick={onOpen}
       onMouseEnter={onHover}
     >
@@ -56,7 +55,7 @@ export function SearchResultCard({
           </>
         )}
       </small>
-      <p>
+      <p data-selectable>
         {splitHighlights(hit.snippet, hit.highlights).map((s, i) => {
           const Tag = s.match ? "mark" : "span";
           // biome-ignore lint/suspicious/noArrayIndexKey: segments are static per render

@@ -39,6 +39,7 @@ jobs:
       # Networking APIs only in src-tauri/src/net; rewrites docs/network-deps.md for the drift check.
       - run: bash scripts/check-net-usage.sh
       - run: pnpm lint
+      - run: pnpm contrast
       - run: pnpm typecheck
       - run: pnpm test
       # Also creates dist/, which generate_context!() embeds.

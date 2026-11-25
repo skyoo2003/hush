@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pub mod about;
+pub mod appearance;
 pub mod brand;
 pub mod commands;
 pub mod desktop;
@@ -41,6 +42,8 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::set_shortcut,
         commands::set_supporter,
         commands::set_theme,
+        commands::set_accent,
+        commands::get_appearance,
         commands::dismiss_sponsor_banner,
         commands::open_sponsor,
         commands::list_models,
@@ -75,6 +78,7 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         app.manage(net::Client::new(guard)?);
         app.manage(db.clone());
         desktop::setup(app.handle(), &db, air_gap)?;
+        appearance::watch_accent(app.handle().clone());
         app.manage(rag::models::ModelManager::new(
             app.path().app_data_dir()?.join("models"),
         ));
@@ -342,6 +346,7 @@ mod tests {
             "set_schedule",
             "set_supporter",
             "set_theme",
+            "set_accent",
             "dismiss_sponsor_banner",
             "open_sponsor",
             "export_diagnostics",
@@ -352,6 +357,9 @@ mod tests {
             assert_acl_denied(invoke(&quick, cmd));
         }
         assert!(invoke(&quick, "get_index_status").is_ok());
+        // Allowed: it fails only on the Db state this test does not manage.
+        let err = invoke(&quick, "get_appearance").expect_err("no Db state");
+        assert!(!err.to_string().contains("not allowed"), "got {err}");
         assert_acl_denied(invoke(&quick, "reveal_source"));
         for cmd in ["open_source", "copy_citation"] {
             assert_acl_denied(invoke(&main, cmd));
@@ -818,6 +826,14 @@ mod tests {
         assert_eq!(
             (s["supporter"].as_bool(), s["theme"].as_str()),
             (Some(false), Some("terminal"))
+        );
+
+        let s = call("set_accent", serde_json::json!({ "accent": "brand" }));
+        assert_eq!(s["accent"], "brand");
+        let a = call("get_appearance", serde_json::json!({}));
+        assert_eq!(
+            (a["theme"].as_str(), a["accent"].as_str()),
+            (Some("terminal"), Some("brand"))
         );
     }
 

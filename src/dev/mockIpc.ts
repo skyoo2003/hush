@@ -5,8 +5,10 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import type { About } from "../ipc/About";
+import type { Accent } from "../ipc/Accent";
 import type { AddedFolder } from "../ipc/AddedFolder";
 import type { AppError } from "../ipc/AppError";
+import type { Appearance } from "../ipc/Appearance";
 import type { AvailableUpdate } from "../ipc/AvailableUpdate";
 import type { Current } from "../ipc/Current";
 import type { DownloadProgress } from "../ipc/DownloadProgress";
@@ -49,6 +51,8 @@ export type Commands = {
 	set_shortcut: (a: { shortcut: string }) => Settings;
 	set_supporter: (a: { on: boolean }) => Settings;
 	set_theme: (a: { theme: Theme }) => Settings;
+	set_accent: (a: { accent: Accent }) => Settings;
+	get_appearance: () => Appearance;
 	dismiss_sponsor_banner: () => Settings;
 	open_sponsor: (a: { channel: number }) => SponsorLink;
 	list_models: () => ModelInfo[];
@@ -70,6 +74,8 @@ export type Events = {
 	"index://schedule": Current;
 	"models://progress": DownloadProgress;
 	"sponsor://qr": SponsorLink;
+	"ui://accent": string;
+	"ui://appearance": Appearance;
 };
 export type MockEvent = {
 	[E in keyof Events]: { event: E; payload: Events[E] };
@@ -78,6 +84,8 @@ export type MockEvent = {
 /** The backend state one scenario runs against. */
 export type Fixture = {
 	settings: Settings;
+	/** NSColor.controlAccentColor as Rust reports it. */
+	systemAccent: string | null;
 	folders: FolderInfo[];
 	failed: Record<number, FailedDocument[]>;
 	index: IndexStatus;
@@ -102,6 +110,16 @@ function handlers(f: Fixture): Commands {
 	const settings = (patch: Partial<Settings>) => {
 		Object.assign(f.settings, patch);
 		return { ...f.settings };
+	};
+	const appearance = (): Appearance => ({
+		theme: f.settings.theme,
+		accent: f.settings.accent,
+		systemAccent: f.systemAccent,
+	});
+	// As appearance.rs does: a theme or accent change reaches every window as an event.
+	const appearanceChanged = (s: Settings) => {
+		emit("ui://appearance", appearance());
+		return s;
 	};
 	return {
 		search: ({ query }) => f.search(query),
@@ -143,7 +161,9 @@ function handlers(f: Fixture): Commands {
 				supporter: on,
 				sponsorBanner: on ? false : f.settings.sponsorBanner,
 			}),
-		set_theme: ({ theme }) => settings({ theme }),
+		set_theme: ({ theme }) => appearanceChanged(settings({ theme })),
+		set_accent: ({ accent }) => appearanceChanged(settings({ accent })),
+		get_appearance: appearance,
 		dismiss_sponsor_banner: () => settings({ sponsorBanner: false }),
 		open_sponsor: () => (f.settings.airGap ? f.sponsorQr : { kind: "browser" }),
 		list_models: () => f.models.map((m) => ({ ...m })),

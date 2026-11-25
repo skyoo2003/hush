@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { DEBOUNCE_MS } from "../search";
 import { baseFixture } from "./fixtures/state";
 import { installMockIpc } from "./mockIpc";
+import { TokensPage } from "./TokensPage";
 import {
 	LANGS,
 	type Lang,
@@ -48,6 +49,10 @@ async function run(step: Step) {
 		)?.set?.call(el, text);
 		el.dispatchEvent(new Event("input", { bubbles: true }));
 		await sleep(DEBOUNCE_MS);
+	} else if ("select" in step) {
+		const el = (await waitFor(step.select)) as HTMLSelectElement;
+		el.value = step.value;
+		el.dispatchEvent(new Event("change", { bubbles: true }));
 	} else if ("click" in step) {
 		(await waitFor(step.click)).click();
 	} else if ("key" in step) {
@@ -80,9 +85,17 @@ function startApp(s: Scenario) {
 		for (let quiet = 0; quiet < 300; quiet = ipc.idle() ? quiet + 20 : 0)
 			await sleep(20);
 	};
+	// The tokens page replaces App; main.tsx still loads the styles and applies the appearance.
+	const mount = s.screen === "tokens" ? "#tokens > *" : "#root > *";
+	if (s.screen === "tokens") {
+		document.getElementById("root")?.remove();
+		const el = document.body.appendChild(document.createElement("div"));
+		el.id = "tokens";
+		createRoot(el).render(<TokensPage />);
+	}
 	window.addEventListener("load", async () => {
 		try {
-			await waitFor("#root > *");
+			await waitFor(mount);
 			await settle();
 			await ipc.emitEvents();
 			for (const step of s.steps ?? []) await run(step);
@@ -121,7 +134,7 @@ function List() {
 									{s.note}
 								</td>
 								{THEMES.flatMap((t) =>
-									LANGS.map((l) => (
+									WINDOWS[s.screen].langs.map((l) => (
 										<td key={t + l} style={{ paddingRight: 8 }}>
 											<a
 												data-scenario={`${s.screen}/${s.state}-${t}-${l}`}

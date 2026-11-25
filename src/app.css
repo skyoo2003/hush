@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Component rules that predate src/ui/. Tokens only (stylelint enforces it). */
+
+.sponsor-banner {
+	position: sticky;
+	bottom: 0;
+	padding: var(--space-8) var(--space-16);
+	border-top: 1px solid var(--border-subtle);
+	background: var(--bg-elevated);
+}
+
+.legal-text {
+	max-height: 24rem;
+	overflow: auto;
+	white-space: pre-wrap;
+}
+
+[role="option"][aria-selected="true"] {
+	outline: 2px solid var(--accent);
+}

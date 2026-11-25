@@ -27,6 +27,8 @@ const COMMANDS: &[&str] = &[
     "set_shortcut",
     "set_supporter",
     "set_theme",
+    "set_accent",
+    "get_appearance",
     "dismiss_sponsor_banner",
     "open_sponsor",
     "list_models",

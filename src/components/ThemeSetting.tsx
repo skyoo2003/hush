@@ -1,25 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { APP_NAME } from "../brand";
 import { t } from "../i18n";
+import type { Accent } from "../ipc/Accent";
 import type { Settings } from "../ipc/Settings";
 import type { Theme } from "../ipc/Theme";
 
-const THEMES: Theme[] = ["system", "oled_dark", "terminal"];
+const THEMES: Theme[] = ["system", "light", "dark", "oled_dark", "terminal"];
+const ACCENTS: Accent[] = ["system", "brand"];
 
-// Every theme is open to everyone (absolute rule 8); `theme.css` keys off `data-theme`.
+// Every theme is open to everyone (absolute rule 8). Rust saves the choice and emits
+// `ui://appearance`, which src/ui/appearance.ts applies in every window.
 export function ThemeSetting() {
-	const [theme, setTheme] = useState<Theme | null>(null);
+	const [settings, setSettings] = useState<Settings | null>(null);
 
 	useEffect(() => {
-		if (theme) document.documentElement.dataset.theme = theme;
-	}, [theme]);
-
-	useEffect(() => {
-		invoke<Settings>("get_settings").then(
-			(s) => setTheme(s.theme),
-			() => setTheme("system"),
-		);
+		invoke<Settings>("get_settings").then(setSettings, () => {});
 	}, []);
 
 	return (
@@ -28,17 +25,35 @@ export function ThemeSetting() {
 			<label>
 				{t("theme.label")}{" "}
 				<select
-					value={theme ?? "system"}
-					disabled={!theme}
+					value={settings?.theme ?? "system"}
+					disabled={!settings}
 					onChange={(e) =>
 						invoke<Settings>("set_theme", {
 							theme: e.target.value as Theme,
-						}).then((s) => setTheme(s.theme))
+						}).then(setSettings)
 					}
 				>
 					{THEMES.map((v) => (
 						<option key={v} value={v}>
 							{t(`theme.${v}`)}
+						</option>
+					))}
+				</select>
+			</label>{" "}
+			<label>
+				{t("accent.label")}{" "}
+				<select
+					value={settings?.accent ?? "system"}
+					disabled={!settings}
+					onChange={(e) =>
+						invoke<Settings>("set_accent", {
+							accent: e.target.value as Accent,
+						}).then(setSettings)
+					}
+				>
+					{ACCENTS.map((v) => (
+						<option key={v} value={v}>
+							{t(`accent.${v}`, { app: APP_NAME })}
 						</option>
 					))}
 				</select>

@@ -20,7 +20,7 @@ function LegalDetails({ which, label }: { which: LegalText; label: string }) {
 			}}
 		>
 			<summary>{label}</summary>
-			<pre className="legal-text">{text}</pre>
+			<pre className="legal-text" data-selectable>{text}</pre>
 		</details>
 	);
 }
