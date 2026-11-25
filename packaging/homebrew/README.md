@@ -6,7 +6,7 @@
 brew install --cask skyoo2003/tap/locite
 ```
 
-Homebrew and GitHub Releases are the only distribution channels. The Mac App Store's terms conflict with the GPL, so Locite is not offered there. Releases are ad-hoc signed and not notarized ([ADR-021](../../docs/decisions.md)), and homebrew/cask does not take casks that fail Gatekeeper, so the cask lives in the project tap. Its `postflight_steps` clear the quarantine flag on the installed app, and its `sha256` pins the release DMG.
+Homebrew and GitHub Releases are the only distribution channels. The Mac App Store's terms conflict with the GPL, so Locite is not offered there. Releases are signed with the project's own certificate and not notarized ([ADR-021](../../docs/decisions.md)), and homebrew/cask does not take casks that fail Gatekeeper, so the cask lives in the project tap. Its `postflight_steps` clear the quarantine flag on the installed app, and its `sha256` pins the release DMG.
 
 ## After a release is published
 

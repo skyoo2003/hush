@@ -18,7 +18,8 @@ cask "locite" do
 
   app "Locite.app"
 
-  # Releases are ad-hoc signed, not notarized (ADR-021), so Gatekeeper would block the first launch.
+  # Releases are signed with the project's own certificate, not notarized (ADR-021), so Gatekeeper
+  # would block the first launch.
   # The sha256 above already pins the exact DMG of the release.
   postflight_steps do
     run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Locite.app"]

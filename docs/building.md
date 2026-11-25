@@ -1,6 +1,6 @@
 # Building Locite yourself
 
-Official builds are ad-hoc signed (not notarized, [ADR-021](decisions.md)) and published on GitHub Releases and Homebrew by [`.github/workflows/release.yml`](../.github/workflows/release.yml). Every release also carries the source archive it was built from. This repository is the complete source of every official build, and the GPL gives you the right to build, change, and run it yourself.
+Official builds are signed with the project's self-signed release certificate (not notarized, [ADR-021](decisions.md)) and published on GitHub Releases and Homebrew by [`.github/workflows/release.yml`](../.github/workflows/release.yml). Every release also carries the source archive it was built from. This repository is the complete source of every official build, and the GPL gives you the right to build, change, and run it yourself.
 
 ## Requirements
 
@@ -34,7 +34,7 @@ bash scripts/sign-macos.sh src-tauri/target/aarch64-apple-darwin/release/bundle/
 bash scripts/check-signatures.sh src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Locite.app
 ```
 
-`sign-macos.sh` ad-hoc signs every library and then the app, exactly as the release workflow does; add an output folder (`sign-macos.sh <App.app> out`) to also get the DMG and the updater archive. For a development build with reload, run `pnpm tauri dev` instead.
+`sign-macos.sh` ad-hoc signs every library and then the app, the same steps the release workflow runs with its certificate; add an output folder (`sign-macos.sh <App.app> out`) to also get the DMG and the updater archive. For a development build with reload, run `pnpm tauri dev` instead.
 
 Gatekeeper does not trust an ad-hoc signature. A build you made on this Mac carries no quarantine flag and opens normally. If you copied it from somewhere else, open **System Settings > Privacy & Security** after the first blocked launch and click **Open Anyway**, or clear the flag with `xattr -dr com.apple.quarantine Locite.app`. Do this only for a build you made yourself or an official one you checked as below.
 
@@ -57,14 +57,19 @@ gh attestation verify Locite_X.Y.Z_aarch64.dmg --repo skyoo2003/locite
 gh attestation verify locite-X.Y.Z-source.tar.gz --repo skyoo2003/locite
 ```
 
-The attestation proves the file was produced by `release.yml` in this repository from that tag.
+The attestation proves the file was produced by `release.yml` in this repository from that tag. An installed official app is signed by the committed release certificate, [`packaging/macos/release-signing-cert.pem`](../packaging/macos/release-signing-cert.pem):
 
-To compare an official app with your own build of the same tag, copy both, strip the signatures (both are ad-hoc, so they differ only by content hash), and diff:
+```sh
+openssl x509 -in packaging/macos/release-signing-cert.pem -noout -fingerprint -sha1   # AE:5B:09:...:0F:AE
+codesign -d -r- /Applications/Locite.app   # certificate leaf = H"ae5b094c9db1bafb6cb4140bb29d9d98025d0fae"
+```
+
+To compare an official app with your own build of the same tag, copy both, strip the signatures, and diff:
 
 ```sh
 codesign --remove-signature Official.app/Contents/MacOS/locite Official.app/Contents/Frameworks/libpdfium.dylib
 codesign --remove-signature Mine.app/Contents/MacOS/locite Mine.app/Contents/Frameworks/libpdfium.dylib
-diff -r -x _CodeSignature -x CodeResources Official.app Mine.app   # signature files hold content hashes
+diff -r -x _CodeSignature -x CodeResources Official.app Mine.app   # signature files differ by signer
 ```
 
 Builds are not bit-identical yet. Building one commit twice on one Mac in two directories (measured 2026-11-25) gave bundles that matched byte for byte after the signatures were removed, except `Contents/MacOS/locite`: the vendored OpenSSL under SQLCipher embeds its build time and the absolute build directory, and the Mach-O UUID changes with them. So expect `diff -r` to report only that executable. Its link to the source is the tag and the attestation, not a byte comparison.
