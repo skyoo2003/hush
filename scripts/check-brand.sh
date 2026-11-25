@@ -27,7 +27,7 @@ for name in APP_NAME APP_SLUG; do
   vals=$(values "$name") || exit 2
   for v in $vals; do scan -w -F -e "$v"; done
 done
-for name in BUNDLE_ID KEYCHAIN_SERVICE SITE_URL UPDATE_MANIFEST_URL SPONSOR_URLS; do
+for name in BUNDLE_ID KEYCHAIN_SERVICE REPO_URL SITE_URL UPDATE_MANIFEST_URL SPONSOR_URLS; do
   vals=$(values "$name") || exit 2
   for v in $vals; do scan -F -e "$v"; done
 done

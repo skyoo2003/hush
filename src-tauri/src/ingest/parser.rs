@@ -109,6 +109,25 @@ impl ParserRegistry {
         }
     }
 
+    /// Every parser the app ships: text, Markdown, DOCX, PNG and JPEG through the system OCR,
+    /// and PDF when PDFium binds from `pdfium`. Without PDFium, PDFs are not admitted at all.
+    pub fn full(pdfium: &std::path::Path) -> Self {
+        use super::image::{ImageParser, JPEG_MAGIC, PNG_MAGIC};
+        use super::pdf::{PdfParser, PDF_MAGIC};
+        let ocr: std::sync::Arc<dyn super::ocr::OcrEngine> =
+            std::sync::Arc::from(super::ocr::default_engine());
+        let registry = Self::new()
+            .with_parser(Some(PNG_MAGIC), ImageParser::png(ocr.clone()))
+            .with_parser(Some(JPEG_MAGIC), ImageParser::jpeg(ocr.clone()));
+        match PdfParser::new(pdfium, ocr) {
+            Ok(p) => registry.with_parser(Some(PDF_MAGIC), p),
+            Err(e) => {
+                tracing::warn!(error = %e, "PDF support is off");
+                registry
+            }
+        }
+    }
+
     /// Adds a parser that needs outside resources (a PDF library, an OCR engine).
     pub fn with_parser(
         mut self,

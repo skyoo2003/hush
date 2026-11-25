@@ -21,7 +21,6 @@ use notify_debouncer_full::{
 use serde::Serialize;
 
 use super::error::WatchError;
-use super::parser::ParserRegistry;
 use super::pipeline;
 use super::queue::{IndexJob, IndexQueue, Reason};
 use super::scanner;
@@ -95,7 +94,6 @@ impl FolderWatcher {
         let actor = Actor {
             db,
             queue,
-            registry: ParserRegistry::new(),
             debouncer,
             folders,
         };
@@ -144,7 +142,6 @@ struct Folder {
 struct Actor {
     db: Arc<Db>,
     queue: Arc<IndexQueue>,
-    registry: ParserRegistry,
     debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
     folders: HashMap<i64, Folder>,
 }
@@ -308,7 +305,7 @@ impl Actor {
                     dir_changed |= filter.admits_dir(&root, p);
                     continue;
                 }
-                Ok(md) if md.is_file() && filter.admits_file(&self.registry, &root, p) => {
+                Ok(md) if md.is_file() && filter.admits_file(self.queue.registry(), &root, p) => {
                     submit(rel, Reason::Reindex);
                     continue;
                 }
@@ -442,6 +439,7 @@ pub fn rescan_enabled(db: &Db, watcher: Option<&FolderWatcher>) -> Result<(), Wa
 mod tests {
     use super::*;
     use crate::ingest::chunker::{CharApprox, ChunkerConfig};
+    use crate::ingest::parser::ParserRegistry;
     use crate::ingest::queue::{QueueConfig, Services};
     use crate::rag::embedder::FakeEmbedder;
     use crate::rag::hybrid::{NoopReranker, SearchMode, SearchService};

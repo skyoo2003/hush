@@ -84,6 +84,19 @@ pub enum PipelineError {
     Exclude(#[source] ignore::Error),
 }
 
+impl PipelineError {
+    /// Whether trying again can succeed. A file whose content is corrupt, encrypted, too large,
+    /// or of the wrong type fails the same way every time; reads, OCR, embedding, and storage
+    /// can fail for a moment.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Parse(p) => matches!(p, ParseError::Io(_) | ParseError::Ocr(_)),
+            Self::Scope(_) | Self::Exclude(_) => false,
+            Self::Io(_) | Self::Embed(_) | Self::Storage(_) | Self::Unstable => true,
+        }
+    }
+}
+
 /// Watcher and folder-registration failures. Messages never carry paths.
 #[derive(Debug, thiserror::Error)]
 pub enum WatchError {

@@ -36,6 +36,10 @@ const COMMANDS: &[&str] = &[
     "export_pack",
     "check_for_update",
     "install_update",
+    "export_diagnostics",
+    "delete_all_indexes",
+    "get_about",
+    "read_legal_text",
 ];
 
 /// Writes only on change: tauri-build watches tauri.conf.json, so an unconditional write loops rebuilds.
@@ -118,7 +122,33 @@ fn tauri_conf() -> Res<String> {
     Ok(serde_json::to_string_pretty(&conf)? + "\n")
 }
 
+/// The commit being built, for the About screen's source link; `v<version>` outside git
+/// (a build from the release source tarball, whose tag names the same commit).
+fn source_rev() -> String {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+    };
+    if let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) {
+        println!("cargo:rerun-if-changed={head}");
+    }
+    if let Some(r) =
+        git(&["symbolic-ref", "-q", "HEAD"]).and_then(|r| git(&["rev-parse", "--git-path", &r]))
+    {
+        println!("cargo:rerun-if-changed={r}");
+    }
+    match git(&["rev-parse", "HEAD"]) {
+        Some(sha) if sha.len() == 40 => sha,
+        _ => format!("v{}", env!("CARGO_PKG_VERSION")),
+    }
+}
+
 fn main() -> Res<()> {
+    println!("cargo:rustc-env=SOURCE_REV={}", source_rev());
     println!("cargo:rerun-if-changed=src/brand.rs");
     println!("cargo:rerun-if-changed=../.github/FUNDING.yml");
     println!("cargo:rerun-if-changed=../docs/funding.md");

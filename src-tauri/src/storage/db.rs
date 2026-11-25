@@ -50,6 +50,28 @@ pub fn open_or_create(path: &Path, keys: &dyn KeyProvider) -> Result<Db, Storage
     }
 }
 
+/// The index DB file inside the app data folder.
+pub fn db_path(data_dir: &Path) -> std::path::PathBuf {
+    data_dir.join(format!("{}.db", crate::brand::APP_SLUG))
+}
+
+/// Deletes the DB with its WAL and shared-memory files, then its key.
+/// Files first: a leftover key only makes the next DB reuse it, while a DB without its key
+/// would stop the app from starting. Missing files and a missing key are not errors.
+pub fn destroy(path: &Path, keys: &dyn KeyProvider) -> Result<(), StorageError> {
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    let mut shm = path.as_os_str().to_owned();
+    shm.push("-shm");
+    for f in [path.as_os_str().to_owned(), wal, shm] {
+        match std::fs::remove_file(&f) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    keys.delete()
+}
+
 impl Db {
     pub fn open(path: &Path, key: &DbKey) -> Result<Self, StorageError> {
         register_sqlite_vec();
@@ -504,6 +526,53 @@ pub(crate) mod tests {
             2
         );
         assert_eq!(count(&db, "SELECT count(*) FROM counters"), 1);
+    }
+
+    #[test]
+    fn a_long_lived_reader_sees_fts_writes_and_merges() {
+        let (_dir, db) = temp_db();
+        let matches = |word: &str| -> i64 {
+            db.read(|c| {
+                c.query_row(
+                    "SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH ?1",
+                    [word],
+                    |r| r.get(0),
+                )
+            })
+            .unwrap()
+        };
+        // One transaction per document, as indexing does: each adds a segment, and automerge
+        // rewrites segments the search reader has already read. About 3 KB of terms each.
+        let add = |range: std::ops::Range<usize>| {
+            for i in range {
+                let body: String = (0..400).map(|j| format!(" t{}x{j}", i % 7)).collect();
+                insert_doc(&db, &format!("d{i}.txt"), &format!("common word{i}{body}"));
+            }
+        };
+        add(0..300);
+        assert_eq!(matches("common"), 300);
+        add(300..600);
+        assert_eq!(matches("common"), 600);
+        assert_eq!(matches("word599"), 1);
+    }
+
+    #[test]
+    fn destroy_removes_every_db_file_and_the_key_even_while_open() {
+        let (dir, path) = db_path();
+        let keys = InMemoryKeyProvider::default();
+        let open = open_or_create(&path, &keys).unwrap();
+        insert_doc(&open, "a.txt", "x");
+        let old_key = *keys.load().unwrap().unwrap().as_bytes();
+        destroy(&path, &keys).unwrap();
+        let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+        assert!(keys.load().unwrap().is_none());
+        destroy(&path, &keys).unwrap();
+        drop(open);
+
+        let fresh = open_or_create(&path, &keys).unwrap();
+        assert_eq!(count(&fresh, "SELECT count(*) FROM documents"), 0);
+        assert_ne!(keys.load().unwrap().unwrap().as_bytes(), &old_key);
     }
 
     #[test]

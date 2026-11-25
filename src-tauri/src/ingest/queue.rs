@@ -381,6 +381,11 @@ impl IndexQueue {
         self.shared.lock().progress()
     }
 
+    /// The parsers this queue indexes with; the watcher admits only files they support.
+    pub fn registry(&self) -> &ParserRegistry {
+        &self.shared.svc.registry
+    }
+
     /// Waits until nothing is queued or running. Returns false on timeout.
     pub fn wait_idle(&self, timeout: Duration) -> bool {
         let end = Instant::now() + timeout;
@@ -557,7 +562,7 @@ impl Shared {
                 attempts: 0,
                 due: now,
             }),
-            Err(e) if attempts < MAX_RETRIES => {
+            Err(e) if attempts < MAX_RETRIES && e.is_retryable() => {
                 // PipelineError messages carry no paths or content.
                 tracing::warn!(error = %e, attempt = attempts + 1, "index job failed; retrying");
                 Some(Entry {
@@ -900,6 +905,49 @@ mod tests {
         fn embed_query(&self, _: &str) -> Result<Vec<f32>, RagError> {
             Err(RagError::Tokenizer)
         }
+    }
+
+    #[test]
+    fn a_corrupt_file_fails_once_without_retries() {
+        struct Corrupt(Arc<AtomicUsize>);
+        impl crate::ingest::parser::Parser for Corrupt {
+            fn supports(&self, ext: &str) -> bool {
+                ext == "bad"
+            }
+            fn parse(
+                &self,
+                _: &crate::security::paths::ScopedPath,
+            ) -> Result<crate::ingest::parser::ParsedDocument, crate::ingest::error::ParseError>
+            {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(crate::ingest::error::ParseError::Corrupt("test"))
+            }
+        }
+        let f = fixture(&[("a.bad", "x")]);
+        let parses = Arc::new(AtomicUsize::new(0));
+        let svc = Services {
+            db: f.db.clone(),
+            registry: ParserRegistry::new().with_parser(None, Corrupt(parses.clone())),
+            chunker: ChunkerConfig::default(),
+            counter: Arc::new(CharApprox),
+            embedder: Arc::new(FakeEmbedder),
+        };
+        let cfg = QueueConfig {
+            parse_workers: 2,
+            retry_backoff: Duration::from_millis(1),
+        };
+        let q = IndexQueue::start(svc, cfg, CancellationToken::new(), |_| {}).unwrap();
+        q.submit(job(&f, "a.bad", Reason::New));
+        assert!(q.wait_idle(WAIT));
+        assert_eq!(parses.load(Ordering::SeqCst), 1);
+        assert_eq!((q.progress().done, q.progress().failed), (0, 1));
+        assert_eq!(
+            count(
+                &f.db,
+                "SELECT count(*) FROM documents WHERE status = 'error' AND error_code = 'corrupted'"
+            ),
+            1
+        );
     }
 
     #[test]

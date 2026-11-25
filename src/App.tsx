@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { APP_NAME } from "./brand";
+import { AboutPanel } from "./components/AboutPanel";
+import { DataPanel } from "./components/DataPanel";
 import { FolderAndSchedulePanel } from "./components/FolderAndSchedulePanel";
 import { QuickSearchModal } from "./components/QuickSearchModal";
 import { SecurityPanel } from "./components/SecurityPanel";
@@ -23,7 +25,9 @@ export function App() {
 			<ShortcutSetting />
 			<SecurityPanel />
 			<ThemeSetting />
+			<DataPanel />
 			<SponsorPanel />
+			<AboutPanel />
 			<SponsorBanner />
 		</main>
 	);
