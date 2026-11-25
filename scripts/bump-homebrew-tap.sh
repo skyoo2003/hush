@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Updates Casks/locite.rb in the Homebrew tap after a release is published. Run by a maintainer:
+#   bash scripts/bump-homebrew-tap.sh <X.Y.Z>
+# Downloads the release's DMG and SHA256SUMS, checks both against their build provenance attestations
+# and the DMG against SHA256SUMS, fills packaging/homebrew/locite.rb with the version and hash, and
+# opens a pull request in the tap. DRY_RUN=1 prints the cask instead of opening the pull request.
+set -euo pipefail
+[ $# -eq 1 ] || { echo "usage: bump-homebrew-tap.sh <X.Y.Z>" >&2; exit 2; }
+v=$1
+[[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bump-homebrew-tap: bad version $v" >&2; exit 2; }
+root=$(cd "$(dirname "$0")/.." && pwd)
+repo=${REPO:-skyoo2003/locite}
+tap=${TAP:-skyoo2003/homebrew-tap}
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+gh release download "v$v" --repo "$repo" --dir "$work" --pattern SHA256SUMS --pattern '*_aarch64.dmg'
+dmg=$(cd "$work" && ls -- *_aarch64.dmg)
+for f in SHA256SUMS "$dmg"; do gh attestation verify "$work/$f" --repo "$repo" >/dev/null; done
+(cd "$work" && grep -- " $dmg\$" SHA256SUMS | shasum -a 256 -c -)
+sha=$(awk -v f="$dmg" '$2 == f {print $1}' "$work/SHA256SUMS")
+
+sed -e "s/^  version \".*\"/  version \"$v\"/" -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" \
+  "$root/packaging/homebrew/locite.rb" > "$work/locite.rb"
+if ! grep -q "version \"$v\"" "$work/locite.rb" || ! grep -q "sha256 \"$sha\"" "$work/locite.rb"; then
+  echo "bump-homebrew-tap: template did not take the version or hash" >&2
+  exit 1
+fi
+
+if [ "${DRY_RUN:-}" = 1 ]; then cat "$work/locite.rb"; exit 0; fi
+gh repo clone "$tap" "$work/tap" -- --depth 1 -q
+cp "$work/locite.rb" "$work/tap/Casks/locite.rb"
+cd "$work/tap"
+git switch -q -c "locite-$v"
+git add Casks/locite.rb
+git commit -q -s -m "locite $v"
+git push -q -u origin "locite-$v"
+gh pr create --repo "$tap" --title "locite $v" --body "Cask update from $repo v$v (DMG checked against SHA256SUMS and its build provenance attestation)."

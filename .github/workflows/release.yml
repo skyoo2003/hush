@@ -1,7 +1,8 @@
 name: Release
 
-# ADR-021. Signing secrets live in the `release` environment and reach only the `sign` job, which runs
-# no package manager and no build script. scripts/check-workflows.sh keeps this trigger tag-only.
+# ADR-021. Secrets live in the `release` environment: the self-signed release certificate reaches only
+# `sign`, the updater key only `sign-update`. Neither job runs a build script.
+# scripts/check-workflows.sh keeps this trigger tag-only.
 on:
   push:
     tags: ['v*']
@@ -87,9 +88,10 @@ jobs:
             out/release-notes.md
           if-no-files-found: error
 
+
   sign:
-    # Holds the signing secrets. Runs only repo scripts and Apple's tools on the built app: no pnpm, cargo,
-    # or npm, and no third-party action except checkout and the artifact actions.
+    # Holds the release certificate. Runs only this repository's scripts and Apple's tools on the built
+    # app: no pnpm, cargo, or npm, and no third-party action except checkout and the artifact actions.
     needs: build
     runs-on: macos-15
     environment: release
@@ -103,47 +105,16 @@ jobs:
         with:
           name: app
           path: unsigned
-      - name: Import the Developer ID certificate into a temporary keychain
+      - name: Sign with the release certificate, then build the DMG and updater archive
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-        run: |
-          kc="$RUNNER_TEMP/release.keychain-db"
-          pw=$(openssl rand -hex 24)
-          security create-keychain -p "$pw" "$kc"
-          security set-keychain-settings -lut 3600 "$kc"
-          security unlock-keychain -p "$pw" "$kc"
-          (umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12")
-          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -f pkcs12 -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          rm -f "$RUNNER_TEMP/cert.p12"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pw" "$kc" > /dev/null
-          # shellcheck disable=SC2046 # one word per keychain path; runner keychain paths have no spaces
-          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
-          (umask 077; printf '%s' "$APPLE_API_KEY" > "$RUNNER_TEMP/notary.p8")
-      - name: Sign, notarize, and staple
-        env:
-          SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          RELEASE_SIGNING_P12: ${{ secrets.RELEASE_SIGNING_P12 }}
+          RELEASE_SIGNING_P12_PASSWORD: ${{ secrets.RELEASE_SIGNING_P12_PASSWORD }}
         run: |
           ditto -x -k unsigned/app.zip app
-          NOTARY_KEY="$RUNNER_TEMP/notary.p8" bash scripts/sign-macos.sh app/*.app dmg
-      - name: Check signatures and Gatekeeper
-        run: |
-          bash scripts/check-signatures.sh app/*.app --developer-id
-          spctl -a -vv -t open --context context:primary-signature dmg/*.dmg
-          xcrun stapler validate dmg/*.dmg
-      - name: Updater archive of the stapled app
-        run: |
-          app=$(basename app/*.app)
-          mkdir update
-          COPYFILE_DISABLE=1 tar -czf "update/$app.tar.gz" -C app "$app"
-      - name: Delete the keychain and the API key
-        if: always()
-        run: |
-          security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
-          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/notary.p8"
+          bash scripts/sign-release.sh app/*.app out
+          mkdir dmg update
+          mv out/*.dmg dmg/
+          mv out/*.app.tar.gz update/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dmg
@@ -156,8 +127,8 @@ jobs:
           if-no-files-found: error
 
   sign-update:
-    # Holds only the updater key (ADR-022), apart from the Apple secrets. Runs the lockfile-pinned
-    # tauri CLI with install scripts disabled; no build script runs here.
+    # Holds the updater key (ADR-022). Runs the lockfile-pinned tauri CLI with install scripts disabled;
+    # no build script runs here.
     needs: sign
     runs-on: ubuntu-latest
     environment: release

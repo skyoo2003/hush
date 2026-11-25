@@ -44,7 +44,15 @@ No sponsors yet.
 
 ## Install
 
-There is no release yet. Build from source as shown below. Once releases start, Locite is distributed through GitHub Releases and Homebrew only. It is not in the Mac App Store, whose terms conflict with the GPL. Each release also carries the source archive of its tag. See [SUPPORT.md](SUPPORT.md) for supported macOS versions.
+There is no release yet. Build from source as shown below. Once releases start, Locite is distributed through GitHub Releases and Homebrew only:
+
+```sh
+brew install --cask skyoo2003/tap/locite
+```
+
+It is not in the Mac App Store, whose terms conflict with the GPL. Each release also carries the source archive of its tag. See [SUPPORT.md](SUPPORT.md) for supported macOS versions.
+
+Releases are signed with the project's own certificate and not notarized yet: notarization needs the paid Apple Developer Program, the first [sponsorship goal](docs/funding.md). The Homebrew cask handles this for you. If you open the DMG yourself, macOS blocks the first launch; open **System Settings > Privacy & Security** and click **Open Anyway**. Check the DMG against the release's `SHA256SUMS` and attestation first ([docs/building.md](docs/building.md#checking-an-official-build)).
 
 ## Roadmap
 
