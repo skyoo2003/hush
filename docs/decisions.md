@@ -692,7 +692,7 @@ None. New features on existing crates: `objc2-foundation` (`NSCalendar`, `NSDate
 
 | Tool | Reason | License | Network use |
 | --- | --- | --- | --- |
-| `cargo-about` 0.9.3 | Rust crate license texts for `THIRD_PARTY_NOTICES.txt` (`src-tauri/about.toml`, `about.hbs`) | MIT OR Apache-2.0 | None: run with `--frozen` (offline, locked), reading license files from the local cargo registry only, never ClearlyDefined. Installed with `cargo install --locked` from crates.io. |
+| `cargo-about` 0.9.3 | Rust crate license texts for `THIRD_PARTY_NOTICES.txt` (`src-tauri/about.toml`, `about.hbs`) | MIT OR Apache-2.0 | None of its own: run with `--frozen` (offline, locked), reading license files from the local cargo registry only, never ClearlyDefined. `scripts/third-party-notices.mjs` first runs `cargo fetch --locked`, which downloads the locked crates of every platform from crates.io, because a target build fetches only its own. Installed with `cargo install --locked` from crates.io. |
 | `cargo-cyclonedx` 0.5.10 | CycloneDX 1.5 JSON SBOM of the aarch64-apple-darwin crate graph | Apache-2.0 | None: reads local `cargo metadata`. Installed with `cargo install --locked` from crates.io. |
 
 ## ADR-022. Signed updates through net::Client

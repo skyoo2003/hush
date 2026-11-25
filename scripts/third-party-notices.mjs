@@ -26,6 +26,9 @@ const rule = `${"=".repeat(80)}\n`;
 const parts = [];
 
 parts.push(`${rule}Rust crates\n${rule}`);
+// `cargo about --frozen` reads `cargo metadata` for every platform, but a build only downloads the crates
+// of its own target, so a fresh machine lacks the rest. Fetch every locked crate first.
+execFileSync("cargo", ["fetch", "--locked"], { cwd: tauri, stdio: "inherit" });
 parts.push(
   execFileSync("cargo", ["about", "generate", "--frozen", "--fail", "about.hbs"], {
     cwd: tauri,
