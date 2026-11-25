@@ -44,6 +44,8 @@ jobs:
       # Also creates dist/, which generate_context!() embeds.
       - run: pnpm build
       - run: node scripts/check-dist-urls.mjs
+      # The UI harness (src/dev, VITE_MOCK_IPC=1) must never reach a build.
+      - run: "! grep -rlF __LOCITE_MOCK_IPC__ dist"
       - run: cargo fmt --check
         working-directory: src-tauri
       - run: cargo clippy --all-targets -- -D warnings
