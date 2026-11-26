@@ -179,7 +179,7 @@ pub fn install<R: Runtime>(
             &item("add_folder", S::AddFolder, Some("CmdOrCtrl+O"), true)?,
             &quick_search,
             &sep()?,
-            // Disabled until `.locitepack` export exists (roadmap week 11).
+            // Disabled until pack export exists (roadmap week 11).
             &item(
                 "export_pack",
                 S::ExportPack,

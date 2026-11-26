@@ -4,7 +4,7 @@
 
 use std::sync::OnceLock;
 
-use crate::brand::APP_NAME;
+use crate::brand::{APP_NAME, PACK_EXT};
 use crate::ingest::queue::IndexProgress;
 use crate::ingest::scheduler::{Current, Reason, SchedState};
 
@@ -14,7 +14,7 @@ pub enum Lang {
     Ko,
 }
 
-/// The first macOS preferred language Locite has, the one WKWebView reports to `navigator.language`.
+/// The first macOS preferred language the app has, the one WKWebView reports to `navigator.language`.
 pub fn lang() -> Lang {
     static LANG: OnceLock<Lang> = OnceLock::new();
     *LANG.get_or_init(|| pick(preferred_languages()))
@@ -125,8 +125,8 @@ pub fn s(lang: Lang, key: S) -> String {
         (S::AddFolder, Ko) => "폴더 추가…",
         (S::OpenQuickSearch, En) => "Open Quick Search",
         (S::OpenQuickSearch, Ko) => "빠른 검색 열기",
-        (S::ExportPack, En) => "Export as .locitepack…",
-        (S::ExportPack, Ko) => ".locitepack으로 내보내기…",
+        (S::ExportPack, En) => return format!("Export as .{PACK_EXT}…"),
+        (S::ExportPack, Ko) => return format!(".{PACK_EXT}으로 내보내기…"),
         (S::CloseWindow, En) => "Close Window",
         (S::CloseWindow, Ko) => "윈도우 닫기",
         (S::Edit, En) => "Edit",
