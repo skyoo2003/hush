@@ -1,0 +1,171 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* The settings window: a title strip, toolbar tabs, and one pane at a time. */
+
+.settings {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-window);
+}
+
+.settings-chrome {
+	flex: none;
+	border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-title {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 28px;
+	font-weight: var(--text-headline-weight);
+}
+
+.settings-tabs {
+	display: flex;
+	justify-content: center;
+	gap: var(--space-4);
+	padding: 0 var(--space-12) var(--space-8);
+}
+
+.settings-tab {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	min-width: 64px;
+	padding: var(--space-4) var(--space-8);
+	border: 0;
+	border-radius: var(--radius-control);
+	background: none;
+	color: var(--fg-secondary);
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+	white-space: nowrap;
+}
+
+.settings-tab:hover {
+	background: var(--bg-hover);
+}
+
+.settings-tab[aria-selected="true"] {
+	background: var(--bg-hover);
+	color: var(--accent-text);
+}
+
+.settings-pane {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: var(--space-20) var(--space-24) var(--space-32);
+}
+
+.settings-pane[hidden] {
+	display: none;
+}
+
+.settings-pane > * + * {
+	margin-top: var(--space-20);
+}
+
+.form-group h2 {
+	margin: 0 0 var(--space-8);
+}
+
+.form-group-description {
+	margin-bottom: var(--space-8);
+	color: var(--fg-secondary);
+}
+
+.form-group-box {
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-card);
+	background: var(--bg-content);
+}
+
+.form-row {
+	padding: var(--space-8) var(--space-12);
+}
+
+.form-row + .form-row {
+	border-top: 1px solid var(--border-subtle);
+}
+
+.form-row-main {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-12);
+	min-height: 24px;
+}
+
+.form-row-label {
+	min-width: 0;
+}
+
+.form-row-control {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: var(--space-8);
+}
+
+.form-row-note {
+	margin-top: var(--space-4);
+	color: var(--fg-secondary);
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+}
+
+.form-row-note p {
+	margin: 0 0 var(--space-4);
+}
+
+.form-mono {
+	font-family: var(--font-mono);
+	font-size: var(--text-callout-size);
+	overflow-wrap: anywhere;
+}
+
+.form-textarea {
+	width: 100%;
+	min-height: 72px;
+	padding: var(--space-4) var(--space-8);
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-control);
+	background: var(--bg-content);
+	color: var(--fg-primary);
+	font-family: var(--font-mono);
+	font-size: var(--text-callout-size);
+	resize: vertical;
+}
+
+.form-list {
+	margin: var(--space-4) 0 0;
+	padding-left: var(--space-16);
+}
+
+.form-qr {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-8);
+	margin: 0;
+	padding: var(--space-12);
+}
+
+.form-qr img {
+	border-radius: var(--radius-card);
+}
+
+/* A switch whose row already names it: the label stays for screen readers only. */
+.form-switch-only .toggle-label {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}

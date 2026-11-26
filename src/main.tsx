@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -13,6 +14,10 @@ document.title = APP_NAME;
 // On failure the window keeps the CSS defaults: system theme, the app's own accent.
 startAppearance().catch(() => {});
 trackWindowFocus();
+// The main window has native sidebar vibrancy (tauri.conf.json); the harness has none.
+if (getCurrentWindow().label === "main" && !import.meta.env.VITE_MOCK_IPC) {
+  document.documentElement.dataset.vibrancy = "";
+}
 
 const root = document.getElementById("root");
 if (root) {

@@ -2,6 +2,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { t } from "../i18n";
+import { Group, Row } from "../settings/Form";
+import { Banner } from "../ui/Banner";
+import { Button } from "../ui/Button";
 import type { AppError } from "../ipc/AppError";
 import type { Settings } from "../ipc/Settings";
 import { formatShortcut, shortcutFromKey } from "../shortcut";
@@ -56,30 +59,35 @@ export function ShortcutSetting() {
   };
 
   return (
-    <section>
-      <h2>{t("shortcut.heading")}</h2>
-      {settings && !settings.shortcutRegistered && (
-        <p role="alert">
-          {t("shortcut.unregistered", {
-            keys: formatShortcut(settings.shortcut),
-          })}
-        </p>
-      )}
-      <button
-        type="button"
-        aria-label={t("shortcut.buttonLabel")}
-        disabled={!settings}
-        onClick={() => setRecording(true)}
-        onKeyDown={onKeyDown}
-        onBlur={() => setRecording(false)}
+    <Group title={t("shortcut.heading")}>
+      <Row
+        label={t("shortcut.buttonLabel")}
+        note={
+          (error ?? (settings && !settings.shortcutRegistered)) && (
+            <Banner tone="error">
+              {error ??
+                t("shortcut.unregistered", {
+                  keys: formatShortcut(settings?.shortcut ?? ""),
+                })}
+            </Banner>
+          )
+        }
       >
-        {recording
-          ? t("shortcut.recording")
-          : settings
-            ? formatShortcut(settings.shortcut)
-            : "…"}
-      </button>
-      {error && <p role="alert">{error}</p>}
-    </section>
+        <Button
+          aria-label={t("shortcut.buttonLabel")}
+          className="shortcut-recorder"
+          disabled={!settings}
+          onClick={() => setRecording(true)}
+          onKeyDown={onKeyDown}
+          onBlur={() => setRecording(false)}
+        >
+          {recording
+            ? t("shortcut.recording")
+            : settings
+              ? formatShortcut(settings.shortcut)
+              : "…"}
+        </Button>
+      </Row>
+    </Group>
   );
 }

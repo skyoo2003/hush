@@ -42,6 +42,8 @@ const COMMANDS: &[&str] = &[
     "delete_all_indexes",
     "get_about",
     "read_legal_text",
+    "open_settings",
+    "set_menu_context",
 ];
 
 /// Writes only on change: tauri-build watches tauri.conf.json, so an unconditional write loops rebuilds.

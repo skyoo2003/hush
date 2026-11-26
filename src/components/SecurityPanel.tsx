@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Settings › Privacy & Air-Gap, Models, and General › Software Update. All three read the same
+// Air-Gap state, which the settings window owns (`AirGap`), so a toggle in one pane shows in all.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Download, FileInput } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../i18n";
+import type { AvailableUpdate } from "../ipc/AvailableUpdate";
 import type { DownloadProgress } from "../ipc/DownloadProgress";
 import type { ImportedFile } from "../ipc/ImportedFile";
 import type { ModelInfo } from "../ipc/ModelInfo";
-import type { AvailableUpdate } from "../ipc/AvailableUpdate";
-import type { Settings } from "../ipc/Settings";
 import {
 	formatBytes,
 	importText,
@@ -16,43 +18,93 @@ import {
 	modelErrorText,
 	percent,
 } from "../models";
+import { Group, Row } from "../settings/Form";
+import { Badge } from "../ui/Badge";
+import { Banner } from "../ui/Banner";
+import { Button } from "../ui/Button";
+import { ProgressBar } from "../ui/ProgressBar";
+import { Switch } from "../ui/Switch";
 import { updateErrorText } from "../update";
+
+/** null until get_settings answers; controls that depend on it stay disabled until then. */
+export type AirGap = {
+	on: boolean | null;
+	set(on: boolean): void;
+	error: string | null;
+};
 
 function FileList({ model }: { model: ModelInfo }) {
 	return (
-		<ul>
+		<ul className="form-list">
 			{model.files.map((f) => (
-				<li key={f.name}>
-					<code>{f.name}</code> ({formatBytes(f.size)})
+				<li key={f.name} className="form-mono" data-selectable>
+					{f.name} ({formatBytes(f.size)})
 					{f.installed ? t("models.file.installed") : ""}
 					<br />
 					{/* Text, not a link: the webview must never request a URL itself (rule 2). */}
-					<code>{f.url}</code>
+					{f.url}
 					<br />
-					SHA-256 <code>{f.sha256}</code>
+					SHA-256 {f.sha256}
 				</li>
 			))}
 		</ul>
 	);
 }
 
-export function SecurityPanel() {
-	// null until get_settings answers; the switch stays disabled until then.
-	const [airGap, setAirGap] = useState<boolean | null>(null);
+export function AirGapPanel({ airGap }: { airGap: AirGap }) {
 	const [toggling, setToggling] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const toggle = async (next: boolean) => {
+		setToggling(true);
+		setError(null);
+		try {
+			await invoke("set_air_gap", { enabled: next });
+			airGap.set(next);
+		} catch {
+			setError(t("security.saveFailed"));
+		} finally {
+			setToggling(false);
+		}
+	};
+
+	return (
+		<Group title={t("settings.privacy")}>
+			<Row
+				note={
+					<>
+						<p>
+							{airGap.on === false
+								? t("security.airGapOff")
+								: t("security.airGapOn")}
+						</p>
+						<p>{t("privacy.verify")}</p>
+					</>
+				}
+			>
+				<Switch
+					label={t("security.airGapLabel")}
+					checked={airGap.on ?? true}
+					disabled={airGap.on === null || toggling}
+					onCheckedChange={(v) => void toggle(v)}
+				/>
+			</Row>
+			{(error ?? airGap.error) && (
+				<Banner tone="error">{error ?? airGap.error}</Banner>
+			)}
+		</Group>
+	);
+}
+
+export function ModelsPanel({ airGap }: { airGap: AirGap }) {
 	const [models, setModels] = useState<ModelInfo[]>([]);
-	const [progress, setProgress] = useState<Record<string, DownloadProgress>>({});
+	const [progress, setProgress] = useState<Record<string, DownloadProgress>>(
+		{},
+	);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [updating, setUpdating] = useState(false);
-	const [updateStatus, setUpdateStatus] = useState<string | null>(null);
-	const [available, setAvailable] = useState<string | null>(null);
 
 	const refresh = useCallback(() => {
-		invoke<Settings>("get_settings").then(
-			(s) => setAirGap(s.airGap),
-			() => setError(t("security.readFailed")),
-		);
 		invoke<ModelInfo[]>("list_models").then(setModels, () =>
 			setError(t("models.listFailed")),
 		);
@@ -68,25 +120,14 @@ export function SecurityPanel() {
 		};
 	}, [refresh]);
 
-	const toggle = async (next: boolean) => {
-		setToggling(true);
-		setError(null);
-		try {
-			await invoke("set_air_gap", { enabled: next });
-			setAirGap(next);
-		} catch {
-			setError(t("security.saveFailed"));
-		} finally {
-			setToggling(false);
-		}
-	};
-
 	// airGapOffForDownload is true only from the first-run button the user clicked.
 	const download = async (id: string, airGapOffForDownload: boolean) => {
 		setError(null);
 		setNotice(null);
-		setModels((ms) => ms.map((m) => (m.id === id ? { ...m, downloading: true } : m)));
-		if (airGapOffForDownload) setAirGap(false);
+		setModels((ms) =>
+			ms.map((m) => (m.id === id ? { ...m, downloading: true } : m)),
+		);
+		if (airGapOffForDownload) airGap.set(false);
 		try {
 			await invoke("download_model", { id, airGapOffForDownload });
 			setNotice(t("models.installed", { id }));
@@ -111,159 +152,178 @@ export function SecurityPanel() {
 		}
 	};
 
-	const checkUpdate = async () => {
+	const firstRun = missingEmbedding(models);
+
+	return (
+		<>
+			{firstRun && (
+				<Group title={t("models.firstRun.legend")}>
+					<Row
+						label={t("models.firstRun.install", {
+							id: firstRun.id,
+							size: formatBytes(firstRun.size),
+						})}
+						note={airGap.on ? t("models.firstRun.airGapNote") : undefined}
+					>
+						<Button
+							variant="primary"
+							icon={Download}
+							disabled={firstRun.downloading || airGap.on === null}
+							onClick={() => void download(firstRun.id, airGap.on === true)}
+						>
+							{airGap.on
+								? t("models.firstRun.downloadAirGap")
+								: t("models.download")}
+						</Button>
+					</Row>
+					<Row
+						label={t("models.firstRun.offline")}
+						note={
+							<details>
+								<summary>{t("models.manualFiles")}</summary>
+								<FileList model={firstRun} />
+							</details>
+						}
+					>
+						<Button icon={FileInput} onClick={() => void importFile()}>
+							{t("models.importFile")}
+						</Button>
+					</Row>
+				</Group>
+			)}
+			<Group title={t("settings.models")}>
+				{models.map((m) => {
+					const p = progress[m.id];
+					return (
+						<Row
+							key={m.id}
+							label={
+								<>
+									<strong>{m.id}</strong>
+									<div className="form-row-note">
+										{t(`models.kind.${m.kind}`)} · {m.license} ·{" "}
+										{formatBytes(m.size)}
+									</div>
+								</>
+							}
+							note={
+								<>
+									{!m.installed &&
+										!m.downloading &&
+										airGap.on !== false &&
+										t("models.airGapOnNote")}
+									{!m.installed && (
+										<details>
+											<summary>{t("models.manualFiles")}</summary>
+											<FileList model={m} />
+										</details>
+									)}
+								</>
+							}
+						>
+							{m.installed ? (
+								<Badge tone="success">{t("models.installedBadge")}</Badge>
+							) : m.downloading ? (
+								<>
+									<ProgressBar
+										label={t("models.downloading", { id: m.id })}
+										value={p ? percent(p.done, p.total) / 100 : undefined}
+									/>
+									<span>
+										{p ? `${percent(p.done, p.total)}%` : t("models.starting")}
+									</span>
+									<Button
+										size="small"
+										onClick={() =>
+											void invoke("cancel_model_download", { id: m.id })
+										}
+									>
+										{t("action.cancel")}
+									</Button>
+								</>
+							) : (
+								<Button
+									size="small"
+									icon={Download}
+									disabled={airGap.on !== false}
+									onClick={() => void download(m.id, false)}
+								>
+									{t("models.download")}
+								</Button>
+							)}
+						</Row>
+					);
+				})}
+				<Row>
+					<Button icon={FileInput} onClick={() => void importFile()}>
+						{t("models.importModelFile")}
+					</Button>
+				</Row>
+			</Group>
+			{notice && <Banner tone="success">{notice}</Banner>}
+			{error && <Banner tone="error">{error}</Banner>}
+		</>
+	);
+}
+
+export function UpdatePanel({ airGap }: { airGap: AirGap }) {
+	const [updating, setUpdating] = useState(false);
+	const [status, setStatus] = useState<string | null>(null);
+	const [available, setAvailable] = useState<string | null>(null);
+
+	const check = async () => {
 		setUpdating(true);
-		setUpdateStatus(t("update.checking"));
+		setStatus(t("update.checking"));
 		setAvailable(null);
 		try {
 			const u = await invoke<AvailableUpdate | null>("check_for_update");
 			setAvailable(u?.version ?? null);
-			setUpdateStatus(
-				u ? t("update.available", { version: u.version }) : t("update.upToDate"),
+			setStatus(
+				u
+					? t("update.available", { version: u.version })
+					: t("update.upToDate"),
 			);
 		} catch (e) {
-			setUpdateStatus(updateErrorText(e));
+			setStatus(updateErrorText(e));
 		} finally {
 			setUpdating(false);
 		}
 	};
 
 	// On success the app relaunches, so only a failure comes back.
-	const installUpdate = async () => {
+	const install = async () => {
 		setUpdating(true);
-		setUpdateStatus(t("update.installing"));
+		setStatus(t("update.installing"));
 		try {
 			await invoke("install_update");
 		} catch (e) {
 			setAvailable(null);
-			setUpdateStatus(updateErrorText(e));
+			setStatus(updateErrorText(e));
 		} finally {
 			setUpdating(false);
 		}
 	};
 
-	const firstRun = missingEmbedding(models);
-
+	const off = airGap.on !== false;
 	return (
-		<section aria-labelledby="security-heading">
-			<h2 id="security-heading">{t("security.heading")}</h2>
-			<label>
-				<input
-					type="checkbox"
-					role="switch"
-					aria-checked={airGap ?? true}
-					checked={airGap ?? true}
-					disabled={airGap === null || toggling}
-					onChange={(e) => void toggle(e.target.checked)}
-				/>
-				{t("security.airGapLabel")}
-			</label>
-			<p>
-				{airGap === false ? t("security.airGapOff") : t("security.airGapOn")}
-			</p>
-
-			<h3>{t("models.heading")}</h3>
-			{firstRun && (
-				<fieldset>
-					<legend>{t("models.firstRun.legend")}</legend>
-					<p>
-						{t("models.firstRun.install", {
-							id: firstRun.id,
-							size: formatBytes(firstRun.size),
-						})}
-					</p>
-					<button
-						type="button"
-						disabled={firstRun.downloading || airGap === null}
-						onClick={() => void download(firstRun.id, airGap === true)}
-					>
-						{airGap
-							? t("models.firstRun.downloadAirGap")
-							: t("models.download")}
-					</button>
-					{airGap && <p>{t("models.firstRun.airGapNote")}</p>}
-					<button type="button" onClick={() => void importFile()}>
-						{t("models.importFile")}
-					</button>
-					<p>{t("models.firstRun.offline")}</p>
-					<FileList model={firstRun} />
-				</fieldset>
-			)}
-
-			<ul>
-				{models.map((m) => {
-					const p = progress[m.id];
-					return (
-						<li key={m.id}>
-							<strong>{m.id}</strong> · {t(`models.kind.${m.kind}`)} ·{" "}
-							{m.license} · {formatBytes(m.size)}
-							{m.installed ? (
-								<span> · {t("models.installedBadge")}</span>
-							) : m.downloading ? (
-								<span>
-									{" "}
-									<progress
-										max={100}
-										value={p ? percent(p.done, p.total) : undefined}
-										aria-label={t("models.downloading", { id: m.id })}
-									/>{" "}
-									{p ? `${percent(p.done, p.total)}%` : t("models.starting")}{" "}
-									<button
-										type="button"
-										onClick={() => void invoke("cancel_model_download", { id: m.id })}
-									>
-										{t("action.cancel")}
-									</button>
-								</span>
-							) : (
-								<span>
-									{" "}
-									<button
-										type="button"
-										disabled={airGap !== false}
-										onClick={() => void download(m.id, false)}
-									>
-										{t("models.download")}
-									</button>
-									{airGap !== false && ` ${t("models.airGapOnNote")}`}
-								</span>
-							)}
-							{!m.installed && (
-								<details>
-									<summary>{t("models.manualFiles")}</summary>
-									<FileList model={m} />
-								</details>
-							)}
-						</li>
-					);
-				})}
-			</ul>
-			<button type="button" onClick={() => void importFile()}>
-				{t("models.importModelFile")}
-			</button>
-			{notice && <p role="status">{notice}</p>}
-			{error && <p role="alert">{error}</p>}
-
-			<h3>{t("update.heading")}</h3>
-			<p>{t("update.manualNote")}</p>
-			<button
-				type="button"
-				disabled={airGap !== false || updating}
-				onClick={() => void checkUpdate()}
+		<Group title={t("update.heading")} description={t("update.manualNote")}>
+			<Row
+				label={<span role="status">{status}</span>}
+				note={off ? t("update.airGapOnNote") : undefined}
 			>
-				{t("update.check")}
-			</button>
-			{airGap !== false && ` ${t("update.airGapOnNote")}`}
-			{updateStatus && <p role="status">{updateStatus}</p>}
-			{available && (
-				<button
-					type="button"
-					disabled={airGap !== false || updating}
-					onClick={() => void installUpdate()}
-				>
-					{t("update.install")}
-				</button>
-			)}
-		</section>
+				<Button disabled={off || updating} onClick={() => void check()}>
+					{t("update.check")}
+				</Button>
+				{available && (
+					<Button
+						variant="primary"
+						disabled={off || updating}
+						onClick={() => void install()}
+					>
+						{t("update.install")}
+					</Button>
+				)}
+			</Row>
+		</Group>
 	);
 }

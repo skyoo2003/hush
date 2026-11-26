@@ -15,9 +15,42 @@
         "label": "main",
         "title": "Locite",
         "url": "index.html",
-        "width": 960,
-        "height": 680,
-        "visible": false
+        "width": 1080,
+        "height": 720,
+        "visible": false,
+        "minWidth": 760,
+        "minHeight": 520,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 22
+        },
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "sidebar"
+          ],
+          "state": "followsWindowActiveState"
+        }
+      },
+      {
+        "label": "settings",
+        "title": "Locite",
+        "url": "index.html",
+        "width": 680,
+        "height": 560,
+        "minWidth": 680,
+        "maxWidth": 680,
+        "minHeight": 420,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 14
+        },
+        "maximizable": false
       },
       {
         "label": "quick-search",
@@ -36,7 +69,8 @@
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-ancestors 'none'",
       "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; worker-src 'self' blob:; connect-src ipc: http://ipc.localhost ws://localhost:1420; object-src 'none'; frame-ancestors 'none'"
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

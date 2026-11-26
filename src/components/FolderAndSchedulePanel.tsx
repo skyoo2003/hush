@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { APP_NAME } from "../brand";
 import { t } from "../i18n";
@@ -14,6 +15,14 @@ import type { ScheduleSettings } from "../ipc/ScheduleSettings";
 import type { ScheduleStatus } from "../ipc/ScheduleStatus";
 import type { Settings } from "../ipc/Settings";
 import { fromTime, SCHEDULE_EVENT, scheduleText, toTime } from "../schedule";
+import { Group, Row } from "../settings/Form";
+import { Alert } from "../ui/Alert";
+import { Banner } from "../ui/Banner";
+import { Button } from "../ui/Button";
+import { Checkbox } from "../ui/Checkbox";
+import { SegmentedControl } from "../ui/SegmentedControl";
+import { Select } from "../ui/Select";
+import { Switch } from "../ui/Switch";
 
 // Must match `ingest::queue::PROGRESS_EVENT`.
 const PROGRESS_EVENT = "index://progress";
@@ -35,7 +44,7 @@ function errorText(e: unknown): string {
 	}
 }
 
-function progressText(indexing: boolean, p: IndexProgress | null): string {
+export function progressText(indexing: boolean, p: IndexProgress | null): string {
 	if (!indexing || !p) return t("folders.progress.waiting");
 	if (p.paused) return t("folders.progress.paused");
 	const pending = p.queued + p.running;
@@ -172,201 +181,220 @@ export function FolderAndSchedulePanel() {
 		});
 	};
 
+	const removing = folders.find((f) => f.id === confirming);
 	return (
-		<section aria-labelledby="folders-heading">
-			<h2 id="folders-heading">{t("folders.heading")}</h2>
-			<p role="status">
-				{progressText(status?.indexing ?? false, status?.progress ?? null)}
-			</p>
-			{folders.length === 0 ? (
-				<p>{t("folders.empty")}</p>
-			) : (
-				<ul>
-					{folders.map((f) => (
-						<li key={f.id}>
-							<label>
-								<input
-									type="checkbox"
-									checked={f.enabled}
-									disabled={busy}
-									onChange={(e) => void setEnabled(f, e.currentTarget.checked)}
-								/>{" "}
+		<>
+			<Group
+				title={t("folders.heading")}
+				description={
+					<span role="status">
+						{progressText(status?.indexing ?? false, status?.progress ?? null)}
+					</span>
+				}
+			>
+				{folders.length === 0 && <Row label={t("folders.empty")} />}
+				{folders.map((f) => (
+					<Row
+						key={f.id}
+						label={
+							<>
 								<strong>{f.label}</strong>
-							</label>{" "}
-							<small title={f.path}>{f.path}</small>{" "}
-							<span>
-								{t("folders.counts", {
-									documents: f.documents,
-									errors: f.failed,
-									skipped: f.skipped,
-								})}
-								{!f.enabled && ` ${t("folders.pausedNote")}`}
-								{f.status === "unavailable" && ` ${t("folders.unavailable")}`}
-							</span>{" "}
-							{f.failed > 0 && (
-								<button
-									type="button"
-									aria-expanded={errorsOf === f.id}
-									onClick={() => setErrorsOf(errorsOf === f.id ? null : f.id)}
+								<div className="form-mono" title={f.path} data-selectable>
+									{f.path}
+								</div>
+								<div className="form-row-note">
+									{t("folders.counts", {
+										documents: f.documents,
+										errors: f.failed,
+										skipped: f.skipped,
+									})}
+									{!f.enabled && ` ${t("folders.pausedNote")}`}
+									{f.status === "unavailable" && ` ${t("folders.unavailable")}`}
+								</div>
+							</>
+						}
+						note={
+							errorsOf === f.id && (
+								<ul
+									className="form-list"
+									aria-label={t("folders.errorsIn", { label: f.label })}
 								>
-									{errorsOf === f.id
-										? t("folders.hideErrors")
-										: t("folders.showErrors")}
-								</button>
-							)}{" "}
-							{confirming === f.id ? (
-								<fieldset>
-									<legend>
-										{t("folders.removeConfirm", { label: f.label })}
-									</legend>
-									<button
-										type="button"
-										disabled={busy}
-										onClick={() => void remove(f)}
-									>
-										{t("folders.remove")}
-									</button>{" "}
-									<button type="button" onClick={() => setConfirming(null)}>
-										{t("action.cancel")}
-									</button>
-								</fieldset>
-							) : (
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => setConfirming(f.id)}
-									aria-label={t("folders.removeLabel", { label: f.label })}
-								>
-									{t("folders.removePrompt")}
-								</button>
-							)}
-							{errorsOf === f.id && (
-								<ul aria-label={t("folders.errorsIn", { label: f.label })}>
 									{failedDocs.map((d) => (
 										<li key={d.docId}>
-											<span>{d.relPath}</span>{" "}
+											<span className="form-mono" data-selectable>
+												{d.relPath}
+											</span>{" "}
 											<em>{t(`folders.reason.${d.reason}`)}</em>{" "}
-											<button
-												type="button"
+											<Button
+												size="small"
 												disabled={busy || !f.enabled}
 												onClick={() => void retry(d)}
 												aria-label={t("folders.retryLabel", { path: d.relPath })}
 											>
 												{t("folders.retry")}
-											</button>
+											</Button>
 										</li>
 									))}
 								</ul>
-							)}
-						</li>
-					))}
-				</ul>
-			)}
-			<button type="button" disabled={busy} onClick={() => void add()}>
-				{t("folders.add")}
-			</button>
-			<h3>
-				<label htmlFor="exclude-patterns">{t("folders.excludeLabel")}</label>
-			</h3>
-			<p id="exclude-help">
-				{t("folders.excludeHelp.lead")} <code>drafts/</code>{" "}
-				{t("folders.excludeHelp.or")} <code>*.bak</code>
-				{t("folders.excludeHelp.tail")}
-			</p>
-			<textarea
-				id="exclude-patterns"
-				aria-describedby="exclude-help"
-				rows={4}
-				value={patterns}
-				onChange={(e) => setPatterns(e.currentTarget.value)}
-			/>
-			<button
-				type="button"
-				disabled={busy || patterns === savedPatterns}
-				onClick={() => void savePatterns()}
-			>
-				{t("folders.savePatterns")}
-			</button>
-			<h3 id="schedule-heading">{t("schedule.heading")}</h3>
-			<p role="status" aria-labelledby="schedule-heading">
-				{scheduleText(schedule?.current ?? null)}
-			</p>
-			{sched && (
-				<>
-					<fieldset disabled={busy}>
-						<legend>{t("schedule.modeLegend")}</legend>
-						{(["auto", "paused", "run_now"] as const).map((mode) => (
-							<label key={mode}>
-								<input
-									type="radio"
-									name="schedule-mode"
-									checked={sched.mode === mode}
-									onChange={() => void saveSchedule({ ...sched, mode })}
-								/>{" "}
-								{t(`schedule.mode.${mode}`)}
-							</label>
-						))}
-					</fieldset>
-					<fieldset disabled={busy}>
-						<legend>{t("schedule.hoursLegend")}</legend>
-						<label>
-							<input
-								type="checkbox"
-								checked={sched.allowedHours !== null}
-								onChange={(e) =>
-									void saveSchedule({
-										...sched,
-										allowedHours: e.currentTarget.checked
-											? { startMinute: 22 * 60, endMinute: 7 * 60 }
-											: null,
-									})
-								}
-							/>{" "}
-							{t("schedule.onlyBetween")}
-						</label>{" "}
-						{sched.allowedHours && (
-							<>
-								<input
-									type="time"
-									aria-label={t("schedule.startTime")}
-									value={toTime(sched.allowedHours.startMinute)}
-									onChange={(e) =>
-										setHour("startMinute", e.currentTarget.value)
-									}
-								/>{" "}
-								{t("schedule.and")}{" "}
-								<input
-									type="time"
-									aria-label={t("schedule.endTime")}
-									value={toTime(sched.allowedHours.endMinute)}
-									onChange={(e) => setHour("endMinute", e.currentTarget.value)}
-								/>
-							</>
+							)
+						}
+					>
+						{f.failed > 0 && (
+							<Button
+								size="small"
+								variant="plain"
+								aria-expanded={errorsOf === f.id}
+								onClick={() => setErrorsOf(errorsOf === f.id ? null : f.id)}
+							>
+								{errorsOf === f.id
+									? t("folders.hideErrors")
+									: t("folders.showErrors")}
+							</Button>
 						)}
-					</fieldset>
-					<label>
-						{t("schedule.lowPowerLabel")}{" "}
-						<select
+						<Switch
+							label={f.label}
+							className="form-switch-only"
+							checked={f.enabled}
 							disabled={busy}
-							value={sched.lowPower}
-							onChange={(e) =>
-								void saveSchedule({
-									...sched,
-									lowPower: e.currentTarget
-										.value as ScheduleSettings["lowPower"],
-								})
+							onCheckedChange={(v) => void setEnabled(f, v)}
+						/>
+						<Button
+							size="small"
+							disabled={busy}
+							onClick={() => setConfirming(f.id)}
+							aria-label={t("folders.removeLabel", { label: f.label })}
+						>
+							{t("folders.removePrompt")}
+						</Button>
+					</Row>
+				))}
+				<Row>
+					<Button icon={FolderPlus} disabled={busy} onClick={() => void add()}>
+						{t("folders.add")}
+					</Button>
+				</Row>
+			</Group>
+			{notice && <Banner tone="info">{notice}</Banner>}
+			{error && <Banner tone="error">{error}</Banner>}
+			<Alert
+				open={removing !== undefined}
+				onOpenChange={(open) => !open && setConfirming(null)}
+				title={t("folders.removeConfirm", { label: removing?.label ?? "" })}
+				tone="destructive"
+				confirmLabel={t("folders.remove")}
+				cancelLabel={t("action.cancel")}
+				onConfirm={() => removing && void remove(removing)}
+			/>
+			<Group
+				title={t("folders.excludeLabel")}
+				description={
+					<span id="exclude-help">
+						{t("folders.excludeHelp.lead")} <code>drafts/</code>{" "}
+						{t("folders.excludeHelp.or")} <code>*.bak</code>
+						{t("folders.excludeHelp.tail")}
+					</span>
+				}
+			>
+				<Row>
+					<textarea
+						id="exclude-patterns"
+						className="form-textarea"
+						aria-label={t("folders.excludeLabel")}
+						aria-describedby="exclude-help"
+						rows={4}
+						value={patterns}
+						onChange={(e) => setPatterns(e.currentTarget.value)}
+					/>
+				</Row>
+				<Row>
+					<Button
+						disabled={busy || patterns === savedPatterns}
+						onClick={() => void savePatterns()}
+					>
+						{t("folders.savePatterns")}
+					</Button>
+				</Row>
+			</Group>
+			<Group
+				title={t("schedule.heading")}
+				description={
+					<span role="status" id="schedule-status">
+						{scheduleText(schedule?.current ?? null)}
+					</span>
+				}
+			>
+				{sched && (
+					<>
+						<Row label={t("schedule.modeLegend")}>
+							<SegmentedControl
+								label={t("schedule.modeLegend")}
+								disabled={busy}
+								options={(["auto", "paused", "run_now"] as const).map(
+									(mode) => ({ value: mode, label: t(`schedule.mode.${mode}`) }),
+								)}
+								value={sched.mode}
+								onValueChange={(mode) => void saveSchedule({ ...sched, mode })}
+							/>
+						</Row>
+						<Row
+							label={
+								<Checkbox
+									label={t("schedule.onlyBetween")}
+									disabled={busy}
+									checked={sched.allowedHours !== null}
+									onCheckedChange={(on) =>
+										void saveSchedule({
+											...sched,
+											allowedHours:
+												on === true
+													? { startMinute: 22 * 60, endMinute: 7 * 60 }
+													: null,
+										})
+									}
+								/>
 							}
 						>
-							<option value="pause">{t("schedule.lowPower.pause")}</option>
-							<option value="one_worker">
-								{t("schedule.lowPower.one_worker")}
-							</option>
-						</select>
-					</label>
-				</>
-			)}
-			{notice && <p>{notice}</p>}
-			{error && <p role="alert">{error}</p>}
-		</section>
+							{sched.allowedHours && (
+								<>
+									<input
+										type="time"
+										className="field-box textfield"
+										disabled={busy}
+										aria-label={t("schedule.startTime")}
+										value={toTime(sched.allowedHours.startMinute)}
+										onChange={(e) =>
+											setHour("startMinute", e.currentTarget.value)
+										}
+									/>
+									{t("schedule.and")}
+									<input
+										type="time"
+										className="field-box textfield"
+										disabled={busy}
+										aria-label={t("schedule.endTime")}
+										value={toTime(sched.allowedHours.endMinute)}
+										onChange={(e) => setHour("endMinute", e.currentTarget.value)}
+									/>
+								</>
+							)}
+						</Row>
+						<Row label={t("schedule.lowPowerLabel")}>
+							<Select
+								label={t("schedule.lowPowerLabel")}
+								disabled={busy}
+								value={sched.lowPower}
+								options={(["pause", "one_worker"] as const).map((v) => ({
+									value: v,
+									label: t(`schedule.lowPower.${v}`),
+								}))}
+								onValueChange={(lowPower) =>
+									void saveSchedule({ ...sched, lowPower })
+								}
+							/>
+						</Row>
+					</>
+				)}
+			</Group>
+		</>
 	);
 }

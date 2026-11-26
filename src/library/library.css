@@ -1,0 +1,208 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* The library window (docs/design/ia.md): full-height sidebar under the traffic lights, toolbar
+ * over the content only, as in Finder and Mail. */
+
+.library {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.library > .split-view {
+	flex: 1;
+}
+
+/* With native sidebar vibrancy the page behind the sidebar is see-through (main.tsx). */
+:root[data-vibrancy] {
+	background: transparent;
+}
+
+.library-sidebar {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	/* The traffic lights sit in the sidebar's top strip. */
+	padding-top: var(--toolbar-height);
+}
+
+.library-sidebar .sidebar {
+	flex: 1;
+	min-height: 0;
+}
+
+
+.index-footer {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	margin: var(--space-8);
+	padding: var(--space-4) var(--space-8);
+	border: 0;
+	border-radius: var(--radius-control);
+	background: none;
+	color: var(--fg-secondary);
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+	text-align: start;
+}
+
+.index-footer:hover {
+	background: var(--bg-hover);
+}
+
+.index-footer-details {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-8);
+	max-width: 280px;
+}
+
+.index-footer-details p {
+	margin: 0;
+}
+
+.library-main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-width: 0;
+	background: var(--bg-content);
+}
+
+.library-search-field {
+	width: min(420px, 40vw);
+}
+
+.library-content {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: var(--space-16) var(--space-20);
+}
+
+.library-content > .banner {
+	margin-bottom: var(--space-12);
+}
+
+.library-search {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-12);
+	min-height: 100%;
+}
+
+.library-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-4);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.library-results [role="option"] {
+	padding: var(--space-8) var(--space-12);
+	border-radius: var(--radius-control);
+}
+
+.library-results [role="option"] p {
+	margin: var(--space-4) 0 0;
+}
+
+.library-status {
+	margin: 0;
+	color: var(--fg-secondary);
+}
+
+.library-status:empty {
+	display: none;
+}
+
+.folder-page {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-12);
+}
+
+.folder-page-header {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.folder-page-header h1 {
+	margin: 0;
+}
+
+.folder-page-path {
+	font-family: var(--font-mono);
+	font-size: var(--text-callout-size);
+	color: var(--fg-secondary);
+	overflow-wrap: anywhere;
+}
+
+.folder-page-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-8);
+	margin-top: var(--space-8);
+}
+
+.folder-page h2 {
+	margin: var(--space-8) 0 0;
+}
+
+.folder-failed {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-card);
+}
+
+.folder-failed li {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: var(--space-12);
+	min-height: 32px;
+	padding: var(--space-4) var(--space-12);
+}
+
+.folder-failed li + li {
+	border-top: 1px solid var(--border-subtle);
+}
+
+.folder-failed code {
+	font-family: var(--font-mono);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.shortcut-table {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+	margin: 0;
+	min-width: 360px;
+}
+
+.shortcut-table-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: var(--space-16);
+}
+
+.shortcut-table dd {
+	margin: 0;
+}
+
+.shortcut-table-note {
+	color: var(--fg-tertiary);
+	font-size: var(--text-callout-size);
+}

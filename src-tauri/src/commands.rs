@@ -733,6 +733,18 @@ pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<(), AppErro
     app.restart()
 }
 
+/// Shows the settings window at `pane`.
+#[tauri::command]
+pub fn open_settings<R: Runtime>(app: AppHandle<R>, pane: desktop::SettingsPane) {
+    desktop::show_settings(&app, Some(pane));
+}
+
+/// The main window reports what it shows, so the menu bar enables the right items.
+#[tauri::command]
+pub fn set_menu_context<R: Runtime>(app: AppHandle<R>, context: desktop::menu::MenuContext) {
+    desktop::menu::update(&app, |c| c.page = Some(context));
+}
+
 #[tauri::command]
 pub fn export_pack() -> Result<(), AppError> {
     Err(AppError::not_implemented())

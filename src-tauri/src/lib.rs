@@ -57,7 +57,20 @@ fn builder<R: Runtime>(b: tauri::Builder<R>) -> tauri::Builder<R> {
         commands::delete_all_indexes,
         commands::get_about,
         commands::read_legal_text,
+        commands::open_settings,
+        commands::set_menu_context,
     ])
+    // Size and position of main and settings; quick search places itself at the cursor.
+    // Visibility is not restored: `desktop::setup` decides what opens at launch.
+    .plugin(
+        tauri_plugin_window_state::Builder::new()
+            .with_denylist(&["quick-search"])
+            .with_state_flags(
+                tauri_plugin_window_state::StateFlags::all()
+                    - tauri_plugin_window_state::StateFlags::VISIBLE,
+            )
+            .build(),
+    )
     // No window is granted a dialog permission: only `add_watched_folder` opens the picker.
     .plugin(tauri_plugin_dialog::init())
     // No window is granted an updater permission either: `update.rs` fetches through `net::Client`.
@@ -331,7 +344,48 @@ mod tests {
         assert_eq!(err["code"], "model_missing", "got {err}");
         assert!(invoke(&quick, "hide_window").is_ok());
 
-        assert_acl_denied(invoke_with(&main, "search", query()));
+        let settings = window(&app, "settings");
+        // Main searches now; only the Db-free part of the call is checked here.
+        let err = invoke_with(&main, "search", query()).expect_err("no search service");
+        assert_eq!(err["code"], "model_missing", "got {err}");
+        assert_acl_denied(invoke_with(&settings, "search", query()));
+        // Main shows and cites, but cannot change what Settings owns.
+        for cmd in [
+            "remove_watched_folder",
+            "set_exclude_patterns",
+            "set_schedule",
+            "set_air_gap",
+            "set_shortcut",
+            "set_supporter",
+            "set_theme",
+            "set_accent",
+            "open_sponsor",
+            "list_models",
+            "download_model",
+            "cancel_model_download",
+            "import_model_file",
+            "check_for_update",
+            "install_update",
+            "export_diagnostics",
+            "delete_all_indexes",
+            "get_about",
+            "read_legal_text",
+        ] {
+            assert_acl_denied(invoke(&main, cmd));
+        }
+        for cmd in [
+            "open_source",
+            "copy_citation",
+            "export_pack",
+            "dismiss_sponsor_banner",
+            "set_menu_context",
+            "open_settings",
+        ] {
+            assert_acl_denied(invoke(&settings, cmd));
+        }
+        for cmd in ["open_settings", "set_menu_context"] {
+            assert_acl_denied(invoke(&quick, cmd));
+        }
         for cmd in [
             "set_air_gap",
             "set_shortcut",
@@ -361,11 +415,11 @@ mod tests {
         let err = invoke(&quick, "get_appearance").expect_err("no Db state");
         assert!(!err.to_string().contains("not allowed"), "got {err}");
         assert_acl_denied(invoke(&quick, "reveal_source"));
-        for cmd in ["open_source", "copy_citation"] {
-            assert_acl_denied(invoke(&main, cmd));
-        }
         // The dialog plugin is registered, but no window may call it directly.
         assert_acl_denied(invoke(&main, "plugin:dialog|open"));
+        assert_acl_denied(invoke(&settings, "plugin:dialog|open"));
+        // Nor the window-state plugin: only Rust saves and restores geometry.
+        assert_acl_denied(invoke(&main, "plugin:window-state|save_window_state"));
         assert_acl_denied(invoke(&quick, "plugin:dialog|open"));
         // Nor the updater plugin, whose own HTTP client would bypass `net::Client`.
         for cmd in ["check", "download", "install", "download_and_install"] {
@@ -392,7 +446,8 @@ mod tests {
             serde_json::json!([])
         );
         let id = || tauri::ipc::InvokeBody::Json(serde_json::json!({ "id": 7 }));
-        let err = invoke_with(&main, "remove_watched_folder", id()).expect_err("unknown folder");
+        let err =
+            invoke_with(&settings, "remove_watched_folder", id()).expect_err("unknown folder");
         assert_eq!(err["code"], "folder_not_found", "got {err}");
         let status = invoke(&main, "get_index_status").unwrap();
         let status = status.deserialize::<serde_json::Value>().unwrap();
@@ -404,7 +459,7 @@ mod tests {
         let guard =
             security::airgap::AirGapGuard::load(&app.state::<Arc<storage::db::Db>>()).unwrap();
         app.manage(net::Client::new(Arc::new(guard)).unwrap());
-        let list = invoke(&main, "list_models").unwrap();
+        let list = invoke(&settings, "list_models").unwrap();
         let list = list.deserialize::<serde_json::Value>().unwrap();
         assert_eq!(list[0]["id"], rag::embedder::MODELS[0].id);
         assert_eq!(list[0]["installed"], false);
@@ -414,16 +469,16 @@ mod tests {
                 serde_json::json!({ "id": id, "airGapOffForDownload": off }),
             )
         };
-        let err = invoke_with(&main, "download_model", body(false)).expect_err("air-gap is on");
+        let err = invoke_with(&settings, "download_model", body(false)).expect_err("air-gap is on");
         assert_eq!(err["code"], "air_gap_enabled", "got {err}");
         let unknown = tauri::ipc::InvokeBody::Json(
             serde_json::json!({ "id": "nope", "airGapOffForDownload": false }),
         );
-        let err = invoke_with(&main, "download_model", unknown).expect_err("unknown id");
+        let err = invoke_with(&settings, "download_model", unknown).expect_err("unknown id");
         assert_eq!(err["code"], "not_in_catalog", "got {err}");
-        let err = invoke(&main, "check_for_update").expect_err("air-gap is on");
+        let err = invoke(&settings, "check_for_update").expect_err("air-gap is on");
         assert_eq!(err["code"], "air_gap_enabled", "got {err}");
-        let err = invoke(&main, "install_update").expect_err("nothing checked");
+        let err = invoke(&settings, "install_update").expect_err("nothing checked");
         assert_eq!(err["code"], "update_failed", "got {err}");
         assert!(app.state::<net::Client>().guard().is_enabled());
         assert_eq!(app.state::<net::Client>().sent_count(), 0);
@@ -646,7 +701,11 @@ mod tests {
             Arc::new(rag::embedder::FakeEmbedder),
             Box::new(rag::hybrid::NoopReranker),
         ));
-        let (main, quick) = (window(&app, "main"), window(&app, "quick-search"));
+        let (main, settings, quick) = (
+            window(&app, "main"),
+            window(&app, "settings"),
+            window(&app, "quick-search"),
+        );
         let json = |v: serde_json::Value| tauri::ipc::InvokeBody::Json(v);
         let call = |w: &WebviewWindow<MockRuntime>, cmd: &str, v: serde_json::Value| {
             invoke_with(w, cmd, json(v))
@@ -699,12 +758,12 @@ mod tests {
         .expect_err("no queue");
         assert_eq!(err["code"], "model_missing", "got {err}");
 
-        let settings = call(
-            &main,
+        let saved = call(
+            &settings,
             "set_exclude_patterns",
             serde_json::json!({ "patterns": "drafts/\n*.tmp" }),
         );
-        assert_eq!(settings["excludePatterns"], "drafts/\n*.tmp");
+        assert_eq!(saved["excludePatterns"], "drafts/\n*.tmp");
         assert_eq!(
             call(&main, "get_settings", serde_json::json!({}))["excludePatterns"],
             "drafts/\n*.tmp"
@@ -717,7 +776,7 @@ mod tests {
             "lowPower": "one_worker",
         });
         let status = call(
-            &main,
+            &settings,
             "set_schedule",
             serde_json::json!({ "settings": night }),
         );
@@ -730,7 +789,7 @@ mod tests {
         let mut empty = night.clone();
         empty["allowedHours"]["endMinute"] = 1320.into();
         let err = invoke_with(
-            &main,
+            &settings,
             "set_schedule",
             json(serde_json::json!({ "settings": empty })),
         )
@@ -751,18 +810,18 @@ mod tests {
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
         app.manage(net::Client::new(guard).unwrap());
         app.manage(Arc::new(db));
-        let main = window(&app, "main");
+        let settings = window(&app, "settings");
         let net = app.state::<net::Client>();
         let db = app.state::<Arc<storage::db::Db>>();
         assert!(net.guard().is_enabled());
 
         for on in [false, true] {
             let body = tauri::ipc::InvokeBody::Json(serde_json::json!({ "enabled": on }));
-            assert!(invoke_with(&main, "set_air_gap", body).is_ok());
+            assert!(invoke_with(&settings, "set_air_gap", body).is_ok());
             assert_eq!(net.guard().is_enabled(), on);
             let reloaded = security::airgap::AirGapGuard::load(&db).unwrap();
             assert_eq!(reloaded.is_enabled(), on);
-            let settings = invoke(&main, "get_settings").unwrap();
+            let settings = invoke(&settings, "get_settings").unwrap();
             let settings = settings.deserialize::<serde_json::Value>().unwrap();
             assert_eq!(settings["airGap"], on);
             // No plugin in the mock app, so nothing is registered.
@@ -780,12 +839,20 @@ mod tests {
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
         app.manage(net::Client::new(guard).unwrap());
         app.manage(Arc::new(db));
-        let main = window(&app, "main");
+        let (main, settings) = (window(&app, "main"), window(&app, "settings"));
         let call = |cmd: &str, args: serde_json::Value| {
-            invoke_with(&main, cmd, tauri::ipc::InvokeBody::Json(args))
-                .unwrap()
-                .deserialize::<serde_json::Value>()
-                .unwrap()
+            invoke_with(
+                if cmd == "dismiss_sponsor_banner" {
+                    &main
+                } else {
+                    &settings
+                },
+                cmd,
+                tauri::ipc::InvokeBody::Json(args),
+            )
+            .unwrap()
+            .deserialize::<serde_json::Value>()
+            .unwrap()
         };
         let banner = || call("get_settings", serde_json::json!({}))["sponsorBanner"].clone();
         let db = app.state::<Arc<storage::db::Db>>();
@@ -846,7 +913,7 @@ mod tests {
         let guard = Arc::new(security::airgap::AirGapGuard::load(&db).unwrap());
         app.manage(net::Client::new(guard).unwrap());
         app.manage(Arc::new(db));
-        let main = window(&app, "main");
+        let main = window(&app, "settings");
         let banner = |cmd: &str, args: serde_json::Value| {
             invoke_with(&main, cmd, tauri::ipc::InvokeBody::Json(args))
                 .unwrap()
