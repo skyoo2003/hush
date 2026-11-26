@@ -1,0 +1,103 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.sidebar {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-12);
+	padding: var(--space-8);
+	overflow-y: auto;
+	background: var(--bg-sidebar);
+}
+
+.sidebar-section-title {
+	display: flex;
+	align-items: center;
+	gap: var(--space-4);
+	padding: 0 var(--space-8);
+	height: 20px;
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+	font-weight: var(--text-headline-weight);
+	color: var(--fg-tertiary);
+}
+
+.sidebar-section-trigger {
+	width: 100%;
+	border: none;
+	border-radius: var(--radius-control);
+	background: none;
+	text-align: start;
+}
+
+.sidebar-chevron {
+	transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.sidebar-section-trigger[data-state="open"] .sidebar-chevron {
+	transform: rotate(90deg);
+}
+
+.sidebar-items {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.sidebar-item {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	width: 100%;
+	height: 28px;
+	padding: 0 var(--space-8);
+	border: none;
+	border-radius: var(--radius-control);
+	background: none;
+	color: var(--fg-primary);
+	text-align: start;
+}
+
+.sidebar-item-icon {
+	flex: none;
+	color: var(--accent);
+}
+
+.sidebar-item-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.sidebar-item-count {
+	font-family: var(--font-mono);
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+	color: var(--fg-tertiary);
+}
+
+.sidebar-item[aria-current="page"] {
+	background: var(--bg-selected);
+	color: var(--fg-on-accent);
+}
+
+.sidebar-item[aria-current="page"]
+	:is(.sidebar-item-icon, .sidebar-item-count) {
+	color: inherit;
+}
+
+[data-window="inactive"] .sidebar-item[aria-current="page"] {
+	background: var(--bg-selected-inactive);
+	color: var(--fg-primary);
+}
+
+[data-window="inactive"]
+	.sidebar-item[aria-current="page"]
+	.sidebar-item-count {
+	/* Tertiary text is too faint on the gray selection. */
+	color: var(--fg-secondary);
+}
+
+[data-window="inactive"] .sidebar-item[aria-current="page"] .sidebar-item-icon {
+	color: var(--accent);
+}

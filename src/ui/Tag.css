@@ -1,0 +1,35 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.tag {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: var(--space-4);
+	height: 16px;
+	padding: 0 var(--space-4) 0 var(--space-8);
+	border-radius: var(--radius-control);
+	background: var(--accent-soft);
+	color: var(--fg-primary);
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+	white-space: nowrap;
+}
+.tag:not(:has(.tag-remove)) {
+	padding-right: var(--space-8);
+}
+
+.tag-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 12px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--fg-secondary);
+}
+.tag-remove:is(:hover, [data-demo="hover"]) {
+	background: var(--bg-hover);
+	color: var(--fg-primary);
+}

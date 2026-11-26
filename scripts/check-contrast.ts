@@ -77,6 +77,11 @@ const PAIRS: [string, string, boolean][] = [
 	["--fg-primary", "--bg-selected-inactive", false],
 	["--fg-secondary", "--bg-selected-inactive", false],
 	["--fg-primary", "--accent-soft", false],
+	...[...SURFACES, "--accent-soft"].map((bg): [string, string, boolean] => [
+		"--accent-text",
+		bg,
+		false,
+	]),
 	["--fg-primary", "--highlight-mark", false],
 ];
 

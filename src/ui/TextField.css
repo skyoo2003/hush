@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.field-label {
+	color: var(--fg-primary);
+}
+
+.field-description {
+	color: var(--fg-secondary);
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+}
+
+/* The text-field box, shared with SearchField. */
+.field-box {
+	height: 24px;
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-control);
+	background: var(--bg-content);
+	color: var(--fg-primary);
+	transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.textfield {
+	padding: 0 var(--space-8);
+	font-size: var(--text-body-size);
+	line-height: var(--text-body-line);
+}
+.textfield::placeholder {
+	color: var(--fg-tertiary);
+}
+.textfield:disabled {
+	color: var(--fg-tertiary);
+	background: var(--bg-window);
+}
+.textfield[aria-invalid="true"] {
+	border-color: var(--danger);
+}

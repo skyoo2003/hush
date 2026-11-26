@@ -94,7 +94,9 @@ mark {
  * the "Show scroll bars" setting. Styling ::-webkit-scrollbar would replace them with legacy
  * always-visible bars, so there is deliberately no rule for it. */
 
-:focus-visible {
+/* `data-demo="hover|pressed|focus"` forces a state for the harness's Components page; component CSS
+ * pairs each pseudo-class with it, e.g. `:is(:hover, [data-demo="hover"])`. */
+:is(:focus-visible, [data-demo="focus"]) {
 	outline: var(--focus-ring-width) solid var(--focus-ring);
 	outline-offset: 1px;
 }
@@ -116,4 +118,10 @@ mark {
 		scroll-behavior: auto !important;
 		/* biome-ignore-end lint/complexity/noImportantStyles: - */
 	}
+}
+
+/* Sentences in components wrap Korean between words, not syllables (screens adopt this with them). */
+:is(.alert, .sheet, .banner, .toast, .empty-state, .not-found) {
+	word-break: keep-all;
+	overflow-wrap: break-word;
 }

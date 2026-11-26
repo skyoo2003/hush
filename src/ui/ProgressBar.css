@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.progress-bar {
+	height: 4px;
+	overflow: hidden;
+	border-radius: var(--radius-control);
+	background: var(--bg-hover);
+}
+
+.progress-bar-fill {
+	height: 100%;
+	border-radius: inherit;
+	background: var(--accent);
+	transition: width var(--duration-normal) var(--ease-out);
+}
+
+.progress-bar[data-indeterminate] .progress-bar-fill {
+	width: 100%;
+	background: repeating-linear-gradient(
+		-45deg,
+		var(--accent) 0 4px,
+		color-mix(in srgb, var(--accent) 50%, transparent) 4px 8px
+	);
+	background-size: 11.31px 11.31px;
+	animation: progress-bar-stripe 1s linear infinite;
+}
+
+/* A square tile of side 8px·√2 holds whole 45° stripe periods, so moving by one tile loops seamlessly. */
+@keyframes progress-bar-stripe {
+	to {
+		background-position: 11.31px 0;
+	}
+}

@@ -1,0 +1,85 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Toolbar height: the sheet hangs from its bottom edge. */
+.sheet-overlay {
+	position: fixed;
+	inset: var(--toolbar-height) 0 0;
+	background: var(--bg-scrim);
+	z-index: 40;
+}
+.sheet-overlay[data-state="open"] {
+	animation: sheet-fade-in var(--duration-normal) var(--ease-out);
+}
+.sheet-overlay[data-state="closed"] {
+	animation: sheet-fade-out var(--duration-normal) var(--ease-out);
+}
+
+.sheet {
+	position: fixed;
+	top: var(--toolbar-height);
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-8);
+	width: min(480px, calc(100vw - var(--space-32)));
+	max-height: calc(100vh - var(--toolbar-height) - var(--space-32));
+	padding: var(--space-20);
+	background: var(--bg-window);
+	color: var(--fg-primary);
+	border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+	box-shadow: var(--shadow-panel);
+	z-index: 41;
+}
+.sheet[data-state="open"] {
+	animation: sheet-in var(--duration-normal) var(--ease-out);
+}
+.sheet[data-state="closed"] {
+	animation: sheet-out var(--duration-normal) var(--ease-out);
+}
+
+.sheet-title {
+	margin: 0;
+	font-size: var(--text-headline-size);
+	line-height: var(--text-headline-line);
+	font-weight: var(--text-headline-weight);
+}
+.sheet-description {
+	margin: 0;
+	color: var(--fg-secondary);
+}
+/* The padding keeps focus rings of the fields inside clear of the scroll clip. */
+.sheet-body {
+	overflow: auto;
+	min-height: 0;
+	margin: calc(-1 * var(--space-4));
+	padding: var(--space-4);
+}
+.sheet-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-8);
+	padding-top: var(--space-12);
+}
+
+@keyframes sheet-in {
+	from {
+		transform: translate(-50%, -100%);
+		opacity: 0;
+	}
+}
+@keyframes sheet-out {
+	to {
+		transform: translate(-50%, -100%);
+		opacity: 0;
+	}
+}
+@keyframes sheet-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes sheet-fade-out {
+	to {
+		opacity: 0;
+	}
+}

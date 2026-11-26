@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.banner {
+	--banner-tone: var(--accent);
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-8);
+	padding: var(--space-8) var(--space-12);
+	background: color-mix(in srgb, var(--banner-tone) 10%, var(--bg-content));
+	border: 1px solid
+		color-mix(in srgb, var(--banner-tone) 35%, var(--bg-content));
+	border-radius: var(--radius-card);
+	color: var(--fg-primary);
+}
+.banner-success {
+	--banner-tone: var(--success);
+}
+.banner-warning {
+	--banner-tone: var(--warning);
+}
+.banner-error {
+	--banner-tone: var(--danger);
+}
+.banner-icon {
+	flex: none;
+	color: var(--banner-tone);
+}
+.banner-text {
+	flex: 1;
+	min-width: 0;
+}
+.banner-title {
+	font-weight: var(--text-headline-weight);
+}
+.banner-action {
+	flex: none;
+	align-self: center;
+}
+.banner-dismiss {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-control);
+	background: transparent;
+	color: var(--fg-secondary);
+}
+.banner-dismiss:is(:hover, [data-demo="hover"]) {
+	background: var(--bg-hover);
+}
+.banner-dismiss:is(:active, [data-demo="pressed"]) {
+	color: var(--fg-primary);
+}

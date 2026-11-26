@@ -1,0 +1,84 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* The Components harness page (ComponentsPage.tsx). Tokens only, like every other stylesheet. */
+
+.cp {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-32);
+	padding: var(--space-24);
+	background: var(--bg-window);
+	color: var(--fg-primary);
+}
+
+.cp-section,
+.cp-stack {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-12);
+}
+
+.cp-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-12);
+}
+
+.cp-grid {
+	display: grid;
+	align-items: center;
+	gap: var(--space-12) var(--space-16);
+}
+
+.cp-grid-row {
+	display: contents;
+}
+
+.cp-cell {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+
+.cp-pair {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--space-16);
+}
+
+.cp-pane,
+.cp-window {
+	overflow: hidden;
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-card);
+	background: var(--bg-content);
+}
+
+.cp-sidebar {
+	height: 100%;
+}
+
+.cp-split {
+	height: 320px;
+	background: var(--bg-content);
+}
+
+.cp-fill {
+	height: 100%;
+}
+
+.cp-overlays {
+	gap: var(--space-24);
+}
+
+.cp-context-target {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	width: 320px;
+	height: 120px;
+	padding: var(--space-12);
+	border: 1px dashed var(--border-strong);
+	border-radius: var(--radius-card);
+	color: var(--fg-secondary);
+}

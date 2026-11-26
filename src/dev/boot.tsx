@@ -63,6 +63,20 @@ async function run(step: Step) {
 			cancelable: true,
 		};
 		document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", opts));
+	} else if ("focus" in step) {
+		(await waitFor(step.focus)).focus();
+	} else if ("context" in step) {
+		const el = await waitFor(step.context);
+		const r = el.getBoundingClientRect();
+		el.dispatchEvent(
+			new MouseEvent("contextmenu", {
+				bubbles: true,
+				cancelable: true,
+				button: 2,
+				clientX: r.left + r.width / 2,
+				clientY: r.top + r.height / 2,
+			}),
+		);
 	} else if ("scroll" in step) {
 		(await waitFor(step.scroll)).scrollIntoView({ block: "start" });
 	} else {
@@ -85,16 +99,26 @@ function startApp(s: Scenario) {
 		for (let quiet = 0; quiet < 300; quiet = ipc.idle() ? quiet + 20 : 0)
 			await sleep(20);
 	};
-	// The tokens page replaces App; main.tsx still loads the styles and applies the appearance.
-	const mount = s.screen === "tokens" ? "#tokens > *" : "#root > *";
-	if (s.screen === "tokens") {
+	// Harness pages replace App; main.tsx still loads the styles and applies the appearance.
+	const page = s.screen === "tokens" || s.screen.startsWith("components");
+	const mount = page ? "#page > *" : "#root > *";
+	if (page) {
 		document.getElementById("root")?.remove();
 		const el = document.body.appendChild(document.createElement("div"));
-		el.id = "tokens";
-		createRoot(el).render(<TokensPage />);
+		el.id = "page";
+		if (s.screen === "tokens") createRoot(el).render(<TokensPage />);
+		// Imported late so i18n reads the navigator.language set above.
+		else
+			import("./ComponentsPage").then(({ ComponentsPage }) =>
+				createRoot(el).render(
+					<ComponentsPage overlays={s.screen === "components-overlays"} />,
+				),
+			);
 	}
 	window.addEventListener("load", async () => {
 		try {
+			// A background frame would gray every column; the page forces inactive where it wants it.
+			if (s.screen.startsWith("components")) root.dataset.window = "active";
 			await waitFor(mount);
 			await settle();
 			await ipc.emitEvents();

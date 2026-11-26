@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.kbd {
+	font-family: var(--font-mono);
+	color: var(--fg-secondary);
+	letter-spacing: 0.08em;
+	white-space: nowrap;
+}

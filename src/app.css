@@ -15,6 +15,7 @@
 	white-space: pre-wrap;
 }
 
-[role="option"][aria-selected="true"] {
+/* src/ui List and Select draw their own selection. */
+[role="option"][aria-selected="true"]:not(.list-option, .select-item) {
 	outline: 2px solid var(--accent);
 }

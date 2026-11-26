@@ -1,0 +1,66 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.alert-overlay {
+	position: fixed;
+	inset: 0;
+	background: var(--bg-scrim);
+	z-index: 80;
+}
+.alert-overlay[data-state="open"] {
+	animation: alert-fade-in var(--duration-fast) var(--ease-out);
+}
+
+.alert {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-8);
+	width: 260px;
+	padding: var(--space-20) var(--space-16) var(--space-16);
+	background: var(--bg-elevated);
+	color: var(--fg-primary);
+	border-radius: var(--radius-panel);
+	box-shadow: var(--shadow-panel);
+	text-align: center;
+	z-index: 81;
+}
+.alert[data-state="open"] {
+	animation: alert-in var(--duration-fast) var(--ease-out);
+}
+.alert-icon {
+	color: var(--fg-secondary);
+}
+.alert-title {
+	margin: 0;
+	font-size: var(--text-headline-size);
+	line-height: var(--text-headline-line);
+	font-weight: var(--text-headline-weight);
+}
+.alert-message {
+	margin: 0;
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+}
+/* macOS 11+ alerts stack full-width buttons, the default one on top. */
+.alert-buttons {
+	display: flex;
+	flex-direction: column;
+	align-self: stretch;
+	gap: var(--space-8);
+	margin-top: var(--space-8);
+}
+
+@keyframes alert-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(0.96);
+	}
+}
+@keyframes alert-fade-in {
+	from {
+		opacity: 0;
+	}
+}

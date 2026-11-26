@@ -113,6 +113,8 @@
 	--radius-control: 6px;
 	--radius-card: 10px;
 	--radius-panel: 12px;
+	--radius-pill: 999px;
+	--toolbar-height: 52px;
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 4px 12px rgb(0 0 0 / 0.14);
 	--shadow-panel: 0 0 0 0.5px rgb(0 0 0 / 0.16), 0 12px 32px rgb(0 0 0 / 0.22);
 	--duration-fast: 120ms;
@@ -137,11 +139,15 @@
 	--border-strong: var(--prim-gray-l8);
 	--accent: var(--prim-indigo-9);
 	--accent-soft: color-mix(in srgb, var(--accent) 16%, var(--bg-content));
+	/* Accent as small text (chip numbers, text buttons): pulled toward the text color so it reads
+	 * at 4.5:1 in every theme and with the system accents, which are tuned for fills. */
+	--accent-text: color-mix(in srgb, var(--accent) 65%, var(--fg-primary));
 	--focus-ring: color-mix(in srgb, var(--accent) 55%, transparent);
 	--success: var(--prim-green-l);
 	--warning: var(--prim-amber-l);
 	--danger: var(--prim-red-l);
 	--highlight-mark: var(--prim-yellow-l);
+	--bg-scrim: color-mix(in srgb, var(--bg-window) 50%, transparent);
 	--overlay-bbox: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
@@ -150,6 +156,9 @@
 }
 
 :root[data-theme="dark"] {
+	/* Black shadows vanish on dark surfaces; a light hairline keeps floating surfaces apart. */
+	--shadow-popover: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 4px 12px rgb(0 0 0 / 0.5);
+	--shadow-panel: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 12px 32px rgb(0 0 0 / 0.6);
 	color-scheme: dark;
 	--bg-window: var(--prim-gray-d2);
 	--bg-content: var(--prim-gray-d1);
@@ -171,6 +180,8 @@
 /* Same declarations as [data-theme="dark"]; check-contrast.ts fails if they drift apart. */
 @media (prefers-color-scheme: dark) {
 	:root:is([data-theme="system"], :not([data-theme])) {
+		--shadow-popover: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 4px 12px rgb(0 0 0 / 0.5);
+		--shadow-panel: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 12px 32px rgb(0 0 0 / 0.6);
 		color-scheme: dark;
 		--bg-window: var(--prim-gray-d2);
 		--bg-content: var(--prim-gray-d1);
@@ -191,6 +202,8 @@
 }
 
 :root[data-theme="oled_dark"] {
+	--shadow-popover: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 4px 12px rgb(0 0 0 / 0.5);
+	--shadow-panel: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 12px 32px rgb(0 0 0 / 0.6);
 	color-scheme: dark;
 	--bg-window: var(--prim-black);
 	--bg-content: var(--prim-black);
@@ -210,6 +223,8 @@
 }
 
 :root[data-theme="terminal"] {
+	--shadow-popover: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 4px 12px rgb(0 0 0 / 0.5);
+	--shadow-panel: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 12px 32px rgb(0 0 0 / 0.6);
 	color-scheme: dark;
 	--font-text: var(--font-mono);
 	--bg-window: var(--prim-term-bg);

@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.checkbox {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border: 1px solid var(--border-strong);
+	border-radius: calc(var(--radius-control) - 2px);
+	background: var(--bg-elevated);
+	color: var(--fg-on-accent);
+	transition: background-color var(--duration-fast) var(--ease-out);
+}
+/* Pressed darkens the current fill; it never hides the check. */
+.checkbox[data-state="unchecked"]:not(:disabled):is(
+		:active,
+		[data-demo="pressed"]
+	) {
+	background: var(--bg-hover);
+}
+.checkbox:is([data-state="checked"], [data-state="indeterminate"]):not(
+		:disabled
+	):is(:active, [data-demo="pressed"]) {
+	border-color: color-mix(in srgb, var(--accent) 85%, var(--fg-primary));
+	background: color-mix(in srgb, var(--accent) 85%, var(--fg-primary));
+}
+.checkbox:is([data-state="checked"], [data-state="indeterminate"]) {
+	border-color: var(--accent);
+	background: var(--accent);
+}
+[data-window="inactive"]
+	.checkbox:is([data-state="checked"], [data-state="indeterminate"]),
+.checkbox:disabled:is([data-state="checked"], [data-state="indeterminate"]) {
+	border-color: var(--border-strong);
+	background: var(--bg-elevated);
+	color: var(--fg-secondary);
+}
+.checkbox:disabled {
+	border-color: var(--border-subtle);
+}
+
+.checkbox-indicator {
+	display: inline-flex;
+}
+.checkbox-indicator[data-state="checked"] .checkbox-mixed,
+.checkbox-indicator[data-state="indeterminate"] .checkbox-check {
+	display: none;
+}

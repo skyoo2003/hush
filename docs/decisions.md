@@ -792,3 +792,37 @@ D1 found no tokens, no dark mode, and themes that changed the page but not the c
 | block2 (macOS) | 0.6.2 | MIT | None | The notification observer block, already in the build graph |
 | stylelint (dev) | 18.1.0 | MIT | None | Token-only CSS rule; never bundled |
 | argparse (dev, via stylelint → cosmiconfig → js-yaml) | 3.0.4 | PSF-2.0 | None | Transitive. PSF-2.0 is GPL-compatible per the FSF license list, so `deny.toml` allows it |
+
+## ADR-025. Component base: Radix UI primitives and Lucide icons
+
+- Date: 2026-11-26
+- Status: Accepted
+
+### Context
+
+D3 builds the shared components in `src/ui/` that every screen uses (docs/design/audit.md #6, #15, #18, #25). Menus, dialogs, popovers, selects, and sliders need focus management, keyboard behavior, and ARIA that are easy to get subtly wrong by hand. DESIGN.md names Lucide for icons. A full UI kit (MUI, Chakra, and the like) would bring its own look, which a native-feeling Mac app has to fight.
+
+### Decision
+
+- Behavior and accessibility come from Radix UI primitives through the `radix-ui` umbrella package (Dialog, AlertDialog, Popover, DropdownMenu, ContextMenu, Tooltip, RadioGroup, Switch, Checkbox, Select, Slider, ScrollArea, Toast, Collapsible). Radix ships no styles; every component is styled only with tokens.css. Tabs is available but no wrapper exists until a screen needs one: the segmented control is a single-choice radio group.
+- List, Table, Stepper, SplitView, Sidebar, and Toolbar are written in `src/ui/` because Radix has no listbox with type-to-select or resizable split.
+- Icons are `lucide-react` components passed to components as `LucideIcon`, so the component sets size (16px chrome, 14px dense rows) and stroke (1.5).
+- Hover, pressed, and focus states pair the pseudo-class with `[data-demo=…]`, and window-inactive styles key off `[data-window="inactive"]` (`src/ui/window.ts` sets it on `<html>`), so the harness Components page can show every state at once.
+- Component tests run in happy-dom (`// @vitest-environment happy-dom` per file) with Testing Library; axe-core checks the Components page. The other test files keep the node environment.
+- `deny.toml` allows `BSD-2-Clause`. It reaches the tree only through happy-dom's `entities` (dev-only, never bundled). BSD-2-Clause is on the FSF's list of GPL-compatible licenses. jsdom was rejected because it also pulls in `lru-cache` under BlueOak-1.0.0.
+
+### Consequences
+
+- The app bundle grows by the Radix primitives the components import and the icons they use; both tree-shake.
+- Radix portals overlays into `document.body`; the CSP is unaffected (no inline scripts, styles come from our CSS).
+
+### New dependencies
+
+| Package | Version | License | Network use | Why |
+|---|---|---|---|---|
+| radix-ui | 1.8.1 | MIT | None | Accessible, unstyled primitives for the components above |
+| lucide-react | 1.80.0 | ISC | None | Icons named by DESIGN.md |
+| @testing-library/react, @testing-library/dom, @testing-library/user-event (dev) | 16.3.3, 10.4.2, 14.6.13 | MIT | None | Component tests through roles and real key events |
+| happy-dom (dev) | 21.0.4 | MIT | None | DOM for component tests |
+| entities (dev, via happy-dom) | 7.0.1 | BSD-2-Clause | None | Transitive; HTML entity decoding |
+| axe-core (dev) | 4.14.1 | MPL-2.0 | None | Accessibility check of the Components page; never bundled |

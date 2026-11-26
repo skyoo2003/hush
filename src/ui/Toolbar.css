@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.toolbar {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: center;
+	gap: var(--space-8);
+	height: var(--toolbar-height);
+	padding: 0 var(--space-12);
+	background: var(--bg-window);
+	border-bottom: 1px solid var(--border-subtle);
+}
+
+.toolbar[data-inset] {
+	padding-left: 78px;
+}
+
+.toolbar-leading,
+.toolbar-center,
+.toolbar-trailing {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	height: 100%;
+	min-width: 0;
+}
+
+.toolbar-trailing {
+	justify-content: flex-end;
+}

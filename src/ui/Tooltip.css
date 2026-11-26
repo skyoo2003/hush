@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.tooltip {
+	max-width: 320px;
+	padding: var(--space-4) var(--space-8);
+	background: var(--bg-elevated);
+	color: var(--fg-primary);
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+	border-radius: var(--radius-control);
+	box-shadow: var(--shadow-popover);
+	transform-origin: var(--radix-tooltip-content-transform-origin);
+	z-index: 60;
+}
+.tooltip[data-state$="open"] {
+	animation: overlay-in var(--duration-fast) var(--ease-out);
+}
+.tooltip[data-state="closed"] {
+	animation: overlay-out var(--duration-fast) var(--ease-out);
+}

@@ -1,0 +1,60 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Label row shared with Checkbox. */
+.toggle-row {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-8);
+}
+.toggle-row:has(:disabled) .toggle-label {
+	color: var(--fg-tertiary);
+}
+
+.switch {
+	--switch-w: 36px;
+	--switch-h: 20px;
+	position: relative;
+	flex: none;
+	width: var(--switch-w);
+	height: var(--switch-h);
+	padding: 0;
+	border: 0;
+	border-radius: calc(var(--switch-h) / 2);
+	background: var(--border-subtle);
+	transition: background-color var(--duration-fast) var(--ease-out);
+}
+.switch-small {
+	--switch-w: 28px;
+	--switch-h: 16px;
+}
+/* Pressed darkens the current fill; it never hides the on state. */
+.switch[data-state="unchecked"]:not(:disabled):is(
+		:active,
+		[data-demo="pressed"]
+	) {
+	background: var(--border-strong);
+}
+.switch[data-state="checked"]:not(:disabled):is(:active, [data-demo="pressed"]) {
+	background: color-mix(in srgb, var(--accent) 85%, var(--fg-primary));
+}
+.switch[data-state="checked"] {
+	background: var(--accent);
+}
+[data-window="inactive"] .switch[data-state="checked"],
+.switch[data-state="checked"]:disabled {
+	background: var(--border-strong);
+}
+
+.switch-thumb {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: calc(var(--switch-h) - 4px);
+	height: calc(var(--switch-h) - 4px);
+	border-radius: 50%;
+	background: var(--fg-on-accent);
+	box-shadow: 0 0 0 0.5px var(--border-strong);
+	transition: transform var(--duration-fast) var(--ease-out);
+}
+.switch-thumb[data-state="checked"] {
+	transform: translateX(calc(var(--switch-w) - var(--switch-h)));
+}
