@@ -20,6 +20,8 @@
 	-webkit-user-select: none;
 	user-select: none;
 	cursor: default;
+	/* Native checkboxes, radios, and ranges follow the theme accent, not the WebKit default blue. */
+	accent-color: var(--accent);
 }
 
 body {

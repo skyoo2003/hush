@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Checks that every fg/bg semantic pair used for text meets WCAG AA in every theme of
-// src/ui/tokens.css, with and without Increase Contrast: 4.5:1, or 3:1 for large text (15px+
-// semibold). Also fails if the system-dark block drifts from [data-theme="dark"].
+// Checks that every fg/bg semantic pair used for text (4.5:1) and the focus ring (3:1) meets
+// WCAG AA in every theme of src/ui/tokens.css, with and without Increase Contrast. Also fails if
+// the system-dark block drifts from [data-theme="dark"].
 // Run: node scripts/check-contrast.ts
 import { readFileSync } from "node:fs";
 import {
@@ -57,32 +57,34 @@ function resolve(decls: Decls, value: string, seen: string[] = []): Rgba {
 	throw new Error(`unsupported color value: ${v}`);
 }
 
-// [foreground, background, large text]. A background with alpha is painted over --bg-content.
+// [foreground, background, minimum ratio]. A background with alpha is painted over --bg-content.
+// Text needs 4.5:1; the focus ring is a non-text indicator and needs 3:1 (WCAG 1.4.11).
 const TEXT = ["--fg-primary", "--fg-secondary", "--fg-tertiary"];
 const SURFACES = ["--bg-window", "--bg-content", "--bg-elevated", "--bg-hover"];
 const STATUS = ["--success", "--warning", "--danger"];
-const PAIRS: [string, string, boolean][] = [
+const PAIRS: [string, string, number][] = [
 	...TEXT.flatMap((fg) =>
-		SURFACES.map((bg): [string, string, boolean] => [fg, bg, false]),
+		SURFACES.map((bg): [string, string, number] => [fg, bg, 4.5]),
 	),
 	...STATUS.flatMap((fg) =>
-		["--bg-content", "--bg-elevated"].map((bg): [string, string, boolean] => [
+		["--bg-content", "--bg-elevated"].map((bg): [string, string, number] => [
 			fg,
 			bg,
-			false,
+			4.5,
 		]),
 	),
-	["--fg-on-accent", "--accent", false],
-	["--fg-on-accent", "--bg-selected", false],
-	["--fg-primary", "--bg-selected-inactive", false],
-	["--fg-secondary", "--bg-selected-inactive", false],
-	["--fg-primary", "--accent-soft", false],
-	...[...SURFACES, "--accent-soft"].map((bg): [string, string, boolean] => [
+	["--fg-on-accent", "--accent", 4.5],
+	["--fg-on-accent", "--bg-selected", 4.5],
+	["--fg-primary", "--bg-selected-inactive", 4.5],
+	["--fg-secondary", "--bg-selected-inactive", 4.5],
+	["--fg-primary", "--accent-soft", 4.5],
+	...[...SURFACES, "--accent-soft"].map((bg): [string, string, number] => [
 		"--accent-text",
 		bg,
-		false,
+		4.5,
 	]),
-	["--fg-primary", "--highlight-mark", false],
+	["--fg-primary", "--highlight-mark", 4.5],
+	...SURFACES.map((bg): [string, string, number] => ["--focus-ring", bg, 3]),
 ];
 
 const file = new URL("../src/ui/tokens.css", import.meta.url);
@@ -121,11 +123,10 @@ for (const [theme, layers] of Object.entries(THEMES)) {
 			[base, ...layers, ...(increase ? [more] : [])].flatMap((d) => [...d]),
 		);
 		const content = resolve(decls, "var(--bg-content)");
-		for (const [fg, bg, large] of PAIRS) {
+		for (const [fg, bg, min] of PAIRS) {
 			const b = over(resolve(decls, `var(${bg})`), content);
 			const f = over(resolve(decls, `var(${fg})`), b);
 			const ratio = contrast(f, b);
-			const min = large ? 3 : 4.5;
 			checked++;
 			if (ratio < min)
 				failures.push(
