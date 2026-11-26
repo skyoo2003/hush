@@ -8,13 +8,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { type MessageKey, t } from "../i18n";
-import type { AppError } from "../ipc/AppError";
+import { t } from "../i18n";
 import type { IndexProgress } from "../ipc/IndexProgress";
 import type { IndexStatus } from "../ipc/IndexStatus";
-import type { OpenMode } from "../ipc/OpenMode";
 import type { SearchHit } from "../ipc/SearchHit";
 import type { SearchResults } from "../ipc/SearchResults";
+import { actOnHit, runSearch, searchErrorKey } from "../searchCommands";
 import {
   createSearcher,
   keyCommand,
@@ -25,25 +24,6 @@ import { SearchResultCard } from "./SearchResultCard";
 
 // Must match `ingest::queue::PROGRESS_EVENT`.
 const PROGRESS_EVENT = "index://progress";
-
-function errorKey(e: unknown): MessageKey {
-  switch ((e as Partial<AppError>)?.code) {
-    case "model_missing":
-      return "search.modelMissing";
-    case "source_not_found":
-      return "search.sourceNotFound";
-    case "clipboard_failed":
-      return "search.clipboardFailed";
-    default:
-      return "search.failed";
-  }
-}
-
-const runSearch = (query: string) =>
-  invoke<SearchResults>("search", {
-    query,
-    utcOffsetMinutes: -new Date().getTimezoneOffset(),
-  });
 
 export function QuickSearchModal() {
   const [query, setQuery] = useState("");
@@ -100,17 +80,12 @@ export function QuickSearchModal() {
 
   const act = async (cmd: "open" | "reveal" | "copy", hit: SearchHit) => {
     try {
-      if (cmd === "copy") {
-        await invoke("copy_citation", { chunkId: hit.chunkId });
-      } else {
-        const mode: OpenMode = cmd;
-        await invoke("open_source", { chunkId: hit.chunkId, mode });
-      }
+      await actOnHit(cmd, hit);
       setActionError(null);
       if (cmd === "open") hide();
       if (cmd === "copy") setStatus(t("search.copied"));
     } catch (e) {
-      setActionError(t(errorKey(e)));
+      setActionError(t(searchErrorKey(e)));
     }
   };
 
@@ -136,7 +111,7 @@ export function QuickSearchModal() {
   };
 
   const error =
-    update.kind === "error" ? t(errorKey(update.error)) : actionError;
+    update.kind === "error" ? t(searchErrorKey(update.error)) : actionError;
 
   return (
     <main className="quick-search">

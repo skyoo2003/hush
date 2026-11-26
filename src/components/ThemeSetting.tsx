@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { APP_NAME } from "../brand";
 import { t } from "../i18n";
+import { Group, Row } from "../settings/Form";
+import { Select } from "../ui/Select";
 import type { Accent } from "../ipc/Accent";
 import type { Settings } from "../ipc/Settings";
 import type { Theme } from "../ipc/Theme";
@@ -20,44 +22,32 @@ export function ThemeSetting() {
 	}, []);
 
 	return (
-		<section aria-labelledby="theme-heading">
-			<h2 id="theme-heading">{t("theme.heading")}</h2>
-			<label>
-				{t("theme.label")}{" "}
-				<select
+		<Group title={t("theme.heading")}>
+			<Row label={t("theme.label")}>
+				<Select
+					label={t("theme.label")}
 					value={settings?.theme ?? "system"}
 					disabled={!settings}
-					onChange={(e) =>
-						invoke<Settings>("set_theme", {
-							theme: e.target.value as Theme,
-						}).then(setSettings)
+					options={THEMES.map((v) => ({ value: v, label: t(`theme.${v}`) }))}
+					onValueChange={(theme) =>
+						invoke<Settings>("set_theme", { theme }).then(setSettings)
 					}
-				>
-					{THEMES.map((v) => (
-						<option key={v} value={v}>
-							{t(`theme.${v}`)}
-						</option>
-					))}
-				</select>
-			</label>{" "}
-			<label>
-				{t("accent.label")}{" "}
-				<select
+				/>
+			</Row>
+			<Row label={t("accent.label")}>
+				<Select
+					label={t("accent.label")}
 					value={settings?.accent ?? "system"}
 					disabled={!settings}
-					onChange={(e) =>
-						invoke<Settings>("set_accent", {
-							accent: e.target.value as Accent,
-						}).then(setSettings)
+					options={ACCENTS.map((v) => ({
+						value: v,
+						label: t(`accent.${v}`, { app: APP_NAME }),
+					}))}
+					onValueChange={(accent) =>
+						invoke<Settings>("set_accent", { accent }).then(setSettings)
 					}
-				>
-					{ACCENTS.map((v) => (
-						<option key={v} value={v}>
-							{t(`accent.${v}`, { app: APP_NAME })}
-						</option>
-					))}
-				</select>
-			</label>
-		</section>
+				/>
+			</Row>
+		</Group>
 	);
 }

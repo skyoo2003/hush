@@ -435,6 +435,15 @@ pub fn rescan_enabled(db: &Db, watcher: Option<&FolderWatcher>) -> Result<(), Wa
     Ok(())
 }
 
+/// Rescans one enabled folder now. A disabled folder is left alone.
+pub fn rescan_folder(db: &Db, watcher: Option<&FolderWatcher>, id: i64) -> Result<(), WatchError> {
+    let folder = db.folder(id)?.ok_or(WatchError::NotFound)?;
+    if let (true, Some(w)) = (folder.enabled, watcher) {
+        w.add(id, Path::new(&folder.path));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

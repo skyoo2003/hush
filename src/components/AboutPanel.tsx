@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
+import { Group, Row } from "../settings/Form";
 import type { About } from "../ipc/About";
 import type { LegalText } from "../ipc/LegalText";
 
@@ -34,23 +35,32 @@ export function AboutPanel() {
 
 	if (!about) return null;
 	return (
-		<section aria-labelledby="about-heading">
-			<h2 id="about-heading">{t("about.heading", { app: about.name })}</h2>
-			<p>{t("about.version", { version: about.version })}</p>
-			<p>{about.copyright}</p>
-			<p>{t("about.warranty")}</p>
-			<p>
-				{t("about.license", { license: about.license })}{" "}
-				<code>{about.licenseUrl}</code>
-			</p>
-			<p>
-				{t("about.source")} <code>{about.sourceUrl}</code>
-			</p>
-			<LegalDetails which="license" label={t("about.showLicense")} />
-			<LegalDetails
-				which="third_party_notices"
-				label={t("about.showNotices")}
+		<Group title={t("about.heading", { app: about.name })}>
+			<Row
+				label={
+					<>
+						<strong>{about.name}</strong>
+						<div className="form-row-note">
+							{t("about.version", { version: about.version })}
+						</div>
+					</>
+				}
 			/>
-		</section>
+			<Row note={<p>{t("about.warranty")}</p>}>{about.copyright}</Row>
+			<Row
+				label={t("about.license", { license: about.license })}
+				note={<span className="form-mono" data-selectable>{about.licenseUrl}</span>}
+			/>
+			<Row
+				label={t("about.source")}
+				note={<span className="form-mono" data-selectable>{about.sourceUrl}</span>}
+			/>
+			<Row>
+				<LegalDetails which="license" label={t("about.showLicense")} />
+			</Row>
+			<Row>
+				<LegalDetails which="third_party_notices" label={t("about.showNotices")} />
+			</Row>
+		</Group>
 	);
 }

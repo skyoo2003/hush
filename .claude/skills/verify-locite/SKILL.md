@@ -5,7 +5,7 @@ description: Launch and drive the real Locite desktop app (Tauri v2, macOS) to p
 
 # Verify Locite
 
-Locite is a macOS desktop app: a Rust backend plus a React UI in two WKWebView windows. `main` is 960x680, hidden at launch once folders exist, and opened from the tray. `quick-search` is a 680x460 always-on-top popup, hidden at start, toggled by the global shortcut `Cmd+Shift+Space`. There is no web URL to point a browser at. Without the Tauri runtime, `invoke()` fails, so `pnpm dev` in a browser proves nothing. Drive the real binary through macOS Accessibility (System Events keystrokes plus an AX tree dump) and capture windows with `screencapture -l`.
+Locite is a macOS desktop app: a Rust backend plus a React UI in three WKWebView windows. `main` (the library: sidebar, toolbar search, Air-Gap indicator) is 1080x720, hidden at launch once folders exist, and opened from the tray or the Dock. `settings` is 680 wide, opened with ⌘, or the tray's Settings item, and holds Air-Gap, folders, models, and the other panels. `quick-search` is a 680x460 always-on-top popup, hidden at start, toggled by the global shortcut `Cmd+Shift+Space`. There is no web URL to point a browser at. Without the Tauri runtime, `invoke()` fails, so `pnpm dev` in a browser proves nothing. Drive the real binary through macOS Accessibility (System Events keystrokes plus an AX tree dump) and capture windows with `screencapture -l`.
 
 All helpers live in `.claude/skills/verify-locite/scripts/`. Run them from the repo root. Each run writes its evidence to `.verify/<UTC timestamp>/` (git-ignored), and `.verify/current` points at the latest run.
 
@@ -47,7 +47,7 @@ This is read-only. It checks that the recorded pid is alive, that no foreign `lo
 
 | Need | Command |
 | --- | --- |
-| Window state | `swift .claude/skills/verify-locite/scripts/windows.swift "$(cat .verify/current/pid)"` gives `main 1 2909 960x680` and `quick-search 0 2910 680x460` |
+| Window state | `swift .claude/skills/verify-locite/scripts/windows.swift "$(cat .verify/current/pid)"` gives `main 1 2909 1080x720`, `settings 0 2911 680x560`, and `quick-search 0 2910 680x460` |
 | UI tree (ARIA labels, input values, headings) | `swift .claude/skills/verify-locite/scripts/ax.swift "$(cat .verify/current/pid)"` |
 | Toggle quick-search | `osascript -e 'tell application "System Events" to key code 49 using {command down, shift down}'` |
 | Type into the focused field | `osascript -e 'tell application "System Events" to keystroke "20261122"'` |
@@ -56,7 +56,7 @@ This is read-only. It checks that the recorded pid is alive, that no foreign `lo
 | Press a control (checkbox, switch, button) | `swift .claude/skills/verify-locite/scripts/press.swift "$(cat .verify/current/pid)" AXCheckBox "Air-Gap mode"` |
 | Scripted journeys | `.claude/skills/verify-locite/scripts/journey-quick-search.sh`, `.claude/skills/verify-locite/scripts/journey-air-gap.sh` |
 
-Stable handles: the search input is `AXComboBox title=Search desc=Search` (`aria-label="Search"`), and the main heading is `AXHeading title=Locite`. Both windows have the title `Locite`, so identify them by size or by `windows.swift` label, never by title.
+Stable handles: the search input in both quick search and the main toolbar is `AXComboBox desc=Search` (`aria-label="Search"`); the Air-Gap switch is in the settings window (Privacy & Air-Gap tab). `journey-air-gap.sh` still expects the switch in `main` and needs updating for the settings window. Both windows have the title `Locite`, so identify them by size or by `windows.swift` label, never by title.
 
 Rules:
 

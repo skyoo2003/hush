@@ -19,12 +19,15 @@ import type { ImportedFile } from "../ipc/ImportedFile";
 import type { IndexProgress } from "../ipc/IndexProgress";
 import type { IndexStatus } from "../ipc/IndexStatus";
 import type { LegalText } from "../ipc/LegalText";
+import type { MenuAction } from "../ipc/MenuAction";
+import type { MenuContext } from "../ipc/MenuContext";
 import type { ModelInfo } from "../ipc/ModelInfo";
 import type { OpenMode } from "../ipc/OpenMode";
 import type { ScheduleSettings } from "../ipc/ScheduleSettings";
 import type { ScheduleStatus } from "../ipc/ScheduleStatus";
 import type { SearchResults } from "../ipc/SearchResults";
 import type { Settings } from "../ipc/Settings";
+import type { SettingsPane } from "../ipc/SettingsPane";
 import type { SponsorLink } from "../ipc/SponsorLink";
 import type { Theme } from "../ipc/Theme";
 
@@ -65,6 +68,8 @@ export type Commands = {
 	delete_all_indexes: () => null;
 	get_about: () => About;
 	read_legal_text: (a: { which: LegalText }) => string;
+	open_settings: (a: { pane: SettingsPane }) => null;
+	set_menu_context: (a: { context: MenuContext }) => null;
 };
 export type Command = keyof Commands;
 
@@ -76,6 +81,9 @@ export type Events = {
 	"sponsor://qr": SponsorLink;
 	"ui://accent": string;
 	"ui://appearance": Appearance;
+	"menu://action": MenuAction;
+	"settings://pane": SettingsPane;
+	"settings://air-gap": boolean;
 };
 export type MockEvent = {
 	[E in keyof Events]: { event: E; payload: Events[E] };
@@ -176,6 +184,8 @@ function handlers(f: Fixture): Commands {
 		delete_all_indexes: () => null,
 		get_about: () => f.about,
 		read_legal_text: () => f.legal,
+		open_settings: () => null,
+		set_menu_context: () => null,
 	};
 }
 

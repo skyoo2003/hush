@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Desktop shell: the quick-search window and its global shortcut, the tray, and the
-//! Dock policy (Accessory, Regular only while the main window is open). No API here
-//! needs the Accessibility permission.
+//! Desktop shell: the main, settings, and quick-search windows, the global shortcut, the menu
+//! bar, the tray, and the Dock policy (Accessory, Regular only while the main or settings window
+//! is open). No API here needs the Accessibility permission.
+
+pub mod menu;
+pub mod strings;
 
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcut, GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::brand;
 use crate::ingest::queue::IndexProgress;
-use crate::ingest::scheduler::{Current, Mode, Reason, SchedState, Scheduler};
+use crate::ingest::scheduler::{Current, Mode, Reason, SchedState};
 use crate::net;
 use crate::sponsor::{self, SponsorLink};
 use crate::storage::db::Db;
@@ -25,8 +30,29 @@ pub const FOCUS_EVENT: &str = "search://focus";
 /// registration succeeds while the other app takes focus and the popup hides on blur.
 pub const DEFAULT_SHORTCUT: &str = "Cmd+Shift+Space";
 const SHORTCUT_SETTING: &str = "quick_search_shortcut";
+use strings::{index_label, lang, s, schedule_label, S};
+
 const MAIN: &str = "main";
+const SETTINGS: &str = "settings";
 const QUICK_SEARCH: &str = "quick-search";
+/// Payload `bool`, Air-Gap on or off, to every window after it changes.
+pub const AIR_GAP_EVENT: &str = "settings://air-gap";
+/// Payload [`SettingsPane`], sent to the settings window.
+pub const SETTINGS_PANE_EVENT: &str = "settings://pane";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsPane {
+    General,
+    Folders,
+    Models,
+    Privacy,
+    Shortcuts,
+    Appearance,
+    Sponsor,
+    About,
+}
 /// Must match the quick-search window size in tauri.conf.json.
 const QUICK_SEARCH_SIZE: LogicalSize<f64> = LogicalSize::new(680.0, 460.0);
 
@@ -55,12 +81,14 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>, db: &Db, air_gap: bool) -> tauri::R
     )?;
     build_tray(app)?;
     set_tray_air_gap(app, air_gap);
-    let registered = Shortcut::from_str(&saved_shortcut(db))
+    let shortcut = saved_shortcut(db);
+    let registered = Shortcut::from_str(&shortcut)
         .ok()
         .is_some_and(|s| app.global_shortcut().register(s).is_ok());
     if !registered {
         tracing::warn!("quick-search shortcut not registered");
     }
+    menu::install(app, &shortcut, registered)?;
     // The main window opens at launch only when it has something to tell or ask.
     let no_folders = db.folders().map(|f| f.is_empty()).unwrap_or(true);
     if !registered || no_folders {
@@ -107,26 +135,48 @@ pub fn set_shortcut<R: Runtime>(
         restore();
         return Err(e.into());
     }
+    menu::set_shortcut(app, &text, true);
     Ok(text)
 }
 
 pub fn on_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEvent) {
+    let app = window.app_handle();
     match (window.label(), event) {
-        (MAIN, WindowEvent::CloseRequested { api, .. }) => {
+        (MAIN | SETTINGS, WindowEvent::CloseRequested { api, .. }) => {
             api.prevent_close();
             let _ = window.hide();
             #[cfg(target_os = "macos")]
-            let _ = window
-                .app_handle()
-                .set_activation_policy(tauri::ActivationPolicy::Accessory);
+            if !is_visible(app, MAIN) && !is_visible(app, SETTINGS) {
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
         }
-        (QUICK_SEARCH, WindowEvent::Focused(false)) => hide_quick_search(window.app_handle()),
+        (QUICK_SEARCH, WindowEvent::Focused(false)) => hide_quick_search(app),
         _ => {}
+    }
+    if let WindowEvent::Focused(focused) = event {
+        let key = match window.label() {
+            MAIN => menu::Key::Main,
+            SETTINGS => menu::Key::Settings,
+            _ => menu::Key::Other,
+        };
+        let focused = *focused;
+        menu::update(app, |c| {
+            if focused {
+                c.key = Some(key);
+            } else if c.key == Some(key) {
+                c.key = None;
+            }
+        });
     }
 }
 
-pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
-    let Some(w) = app.get_webview_window(MAIN) else {
+fn is_visible<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
+    app.get_webview_window(label)
+        .is_some_and(|w| w.is_visible().unwrap_or(false))
+}
+
+fn show_window<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    let Some(w) = app.get_webview_window(label) else {
         return;
     };
     #[cfg(target_os = "macos")]
@@ -136,11 +186,24 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
         .and_then(|()| w.unminimize())
         .and_then(|()| w.set_focus())
     {
-        tracing::warn!(error = %e, "main window show failed");
+        tracing::warn!(error = %e, label, "window show failed");
     }
 }
 
-fn toggle_quick_search<R: Runtime>(app: &AppHandle<R>) {
+pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
+    show_window(app, MAIN);
+}
+
+/// Shows the one settings window, switched to `pane` when given (else the last pane used).
+pub fn show_settings<R: Runtime>(app: &AppHandle<R>, pane: Option<SettingsPane>) {
+    if let Some(pane) = pane {
+        // Before show, so the window never paints the previous pane first.
+        let _ = app.emit_to(SETTINGS, SETTINGS_PANE_EVENT, pane);
+    }
+    show_window(app, SETTINGS);
+}
+
+pub(crate) fn toggle_quick_search<R: Runtime>(app: &AppHandle<R>) {
     let Some(w) = app.get_webview_window(QUICK_SEARCH) else {
         return;
     };
@@ -174,10 +237,7 @@ pub fn hide_quick_search<R: Runtime>(app: &AppHandle<R>) {
         Ok(()) => {
             // Hiding the app returns focus to the app the user came from.
             #[cfg(target_os = "macos")]
-            if !app
-                .get_webview_window(MAIN)
-                .is_some_and(|m| m.is_visible().unwrap_or(false))
-            {
+            if !is_visible(app, MAIN) && !is_visible(app, SETTINGS) {
                 let _ = app.hide();
             }
             let _ = app.emit(FOCUS_EVENT, false);
@@ -226,19 +286,71 @@ fn quick_search_origin(
 // Tray.
 
 struct Tray<R: Runtime> {
+    icon: TrayIcon<R>,
     index: MenuItem<R>,
     schedule: MenuItem<R>,
     pause: MenuItem<R>,
     air_gap: MenuItem<R>,
+    state: Mutex<TrayState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrayState {
+    air_gap: bool,
+    paused: bool,
+    indexing: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayGlyph {
+    Idle,
+    Indexing,
+    Paused,
+    AirGapOff,
+}
+
+/// Air-Gap off wins: it is the one state the user must not miss.
+fn tray_glyph(s: TrayState) -> TrayGlyph {
+    if !s.air_gap {
+        TrayGlyph::AirGapOff
+    } else if s.paused {
+        TrayGlyph::Paused
+    } else if s.indexing {
+        TrayGlyph::Indexing
+    } else {
+        TrayGlyph::Idle
+    }
+}
+
+/// Template images (black + alpha) from `scripts/make-tray-icons.mjs`; macOS tints them.
+fn glyph_png(g: TrayGlyph) -> &'static [u8] {
+    match g {
+        TrayGlyph::Idle => include_bytes!("../icons/tray/idle.png"),
+        TrayGlyph::Indexing => include_bytes!("../icons/tray/indexing.png"),
+        TrayGlyph::Paused => include_bytes!("../icons/tray/paused.png"),
+        TrayGlyph::AirGapOff => include_bytes!("../icons/tray/airgap-off.png"),
+    }
+}
+
+fn tooltip(g: TrayGlyph) -> String {
+    let l = lang();
+    let detail = match g {
+        TrayGlyph::AirGapOff => s(l, S::AirGapOff),
+        TrayGlyph::Paused => s(l, S::IndexingPaused),
+        TrayGlyph::Indexing => s(l, S::Indexing),
+        TrayGlyph::Idle => s(l, S::AirGapOn),
+    };
+    format!("{} — {detail}", brand::APP_NAME)
 }
 
 fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let l = lang();
     let item =
         |id: &str, text: &str, enabled| MenuItem::with_id(app, id, text, enabled, None::<&str>);
-    let index = item("index", &index_label(None), false)?;
-    let schedule = item("schedule", &schedule_label(None), false)?;
-    let pause = item("pause", "Pause Indexing", false)?;
-    let air_gap = item("air_gap", "Air-Gap: On", false)?;
+    let index = item("index", &index_label(l, None), false)?;
+    let schedule = item("schedule", &schedule_label(l, None), false)?;
+    let pause = item("pause", &s(l, S::PauseIndexing), false)?;
+    let air_gap = item("air_gap", &s(l, S::AirGapOn), false)?;
     let sponsors = sponsor::CHANNEL_NAMES
         .iter()
         .enumerate()
@@ -249,59 +361,76 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
-            &item("search", "Search", true)?,
+            &item("search", &s(l, S::Search), true)?,
+            &item("library", &s(l, S::Library), true)?,
             &PredefinedMenuItem::separator(app)?,
             &index,
             &schedule,
             &pause,
             &air_gap,
             &PredefinedMenuItem::separator(app)?,
-            &Submenu::with_items(app, "Sponsor", true, &sponsor_refs)?,
-            &item("settings", "Settings…", true)?,
+            &Submenu::with_items(app, s(l, S::SponsorSubmenu), true, &sponsor_refs)?,
+            &item("settings", &s(l, S::Settings), true)?,
             &PredefinedMenuItem::separator(app)?,
-            &item("quit", &format!("Quit {}", brand::APP_NAME), true)?,
+            &item("quit", &s(l, S::Quit), true)?,
         ],
     )?;
-    let mut tray = TrayIconBuilder::with_id("tray")
-        .tooltip(brand::APP_NAME)
+    let state = TrayState {
+        air_gap: true,
+        paused: false,
+        indexing: false,
+    };
+    let glyph = tray_glyph(state);
+    let icon = TrayIconBuilder::with_id("tray")
+        .tooltip(tooltip(glyph))
+        .icon(Image::from_bytes(glyph_png(glyph))?)
+        .icon_as_template(true)
         .menu(&menu)
-        .on_menu_event(|app, e| on_tray_menu(app, e.id().as_ref()));
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
-    }
-    tray.build(app)?;
+        .on_menu_event(|app, e| on_tray_menu(app, e.id().as_ref()))
+        .build(app)?;
     app.manage(Tray {
+        icon,
         index,
         schedule,
         pause,
         air_gap,
+        state: Mutex::new(state),
     });
     Ok(())
+}
+
+fn update_tray_state<R: Runtime>(tray: &Tray<R>, change: impl FnOnce(&mut TrayState)) {
+    let Ok(mut state) = tray.state.lock() else {
+        return;
+    };
+    let before = tray_glyph(*state);
+    change(&mut state);
+    let glyph = tray_glyph(*state);
+    if glyph == before {
+        return;
+    }
+    if let Ok(image) = Image::from_bytes(glyph_png(glyph)) {
+        let _ = tray.icon.set_icon(Some(image));
+        let _ = tray.icon.set_icon_as_template(true);
+    }
+    let _ = tray.icon.set_tooltip(Some(tooltip(glyph)));
+}
+
+pub(crate) fn toggle_pause<R: Runtime>(app: &AppHandle<R>) {
+    let Some(s) = app.try_state::<std::sync::Arc<crate::ingest::scheduler::Scheduler>>() else {
+        return;
+    };
+    let paused = s.settings().mode == Mode::Paused;
+    menu::set_mode(app, if paused { Mode::Auto } else { Mode::Paused });
 }
 
 fn on_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "search" => toggle_quick_search(app),
-        "settings" => show_main(app),
+        "settings" => show_settings(app, None),
+        "library" => show_main(app),
         "quit" => app.exit(0),
-        "pause" => {
-            let (Some(s), Some(db)) = (
-                app.try_state::<Arc<Scheduler>>(),
-                app.try_state::<Arc<Db>>(),
-            ) else {
-                return;
-            };
-            let mut settings = s.settings();
-            settings.mode = if settings.mode == Mode::Paused {
-                Mode::Auto
-            } else {
-                Mode::Paused
-            };
-            // The scheduler reports the change, which relabels this item.
-            if let Err(e) = s.change(&db, settings) {
-                tracing::warn!(error = %e, "schedule not saved");
-            }
-        }
+        "pause" => toggle_pause(app),
         _ => {
             let channel = id.strip_prefix("sponsor:").and_then(|i| i.parse().ok());
             let Some(channel) = channel else {
@@ -314,8 +443,8 @@ fn on_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
             if let Some(qr @ SponsorLink::Qr { .. }) =
                 sponsor::link(channel, air_gap, sponsor::open_in_browser)
             {
-                show_main(app);
-                let _ = app.emit(sponsor::QR_EVENT, qr);
+                show_settings(app, Some(SettingsPane::Sponsor));
+                let _ = app.emit_to(SETTINGS, sponsor::QR_EVENT, qr);
             }
         }
     }
@@ -326,72 +455,44 @@ pub fn set_tray_index<R: Runtime>(app: &AppHandle<R>, progress: Option<IndexProg
     let Some(tray) = app.try_state::<Tray<R>>() else {
         return;
     };
-    let _ = tray.index.set_text(index_label(progress));
+    let _ = tray.index.set_text(index_label(lang(), progress));
+    update_tray_state(&tray, |s| {
+        s.indexing = progress.is_some_and(|p| p.queued + p.running > 0);
+        s.paused = progress.is_some_and(|p| p.paused);
+    });
 }
 
 /// Called with each scheduler decision. `None` until indexing starts.
 pub fn set_tray_schedule<R: Runtime>(app: &AppHandle<R>, current: Option<Current>) {
+    menu::update(app, |c| c.schedule = current);
     let Some(tray) = app.try_state::<Tray<R>>() else {
         return;
     };
-    let _ = tray.schedule.set_text(schedule_label(current));
+    let l = lang();
+    let _ = tray.schedule.set_text(schedule_label(l, current));
     let user_paused = current.is_some_and(|c| c.reason == Reason::UserPaused);
-    let _ = tray.pause.set_text(if user_paused {
-        "Resume Indexing"
-    } else {
-        "Pause Indexing"
-    });
+    let _ = tray.pause.set_text(s(
+        l,
+        if user_paused {
+            S::ResumeIndexing
+        } else {
+            S::PauseIndexing
+        },
+    ));
     let _ = tray.pause.set_enabled(current.is_some());
+    update_tray_state(&tray, |s| {
+        s.paused = current.is_some_and(|c| c.state == SchedState::Paused)
+    });
 }
 
-fn schedule_label(current: Option<Current>) -> String {
-    let Some(c) = current else {
-        return "Schedule: not started".into();
-    };
-    let state = match c.state {
-        SchedState::Paused => "Paused",
-        SchedState::RunNow => "Running now",
-        SchedState::LowPower => "Low power",
-        SchedState::Interactive => "Interactive",
-        SchedState::Idle => "Idle",
-        SchedState::Normal => "Normal",
-    };
-    let why = match c.reason {
-        Reason::UserPaused => "paused by you",
-        Reason::UserRunNow => "run now",
-        Reason::OutsideHours => "outside allowed hours",
-        Reason::Thermal => "Mac is hot",
-        Reason::LowPowerMode => "Low Power Mode",
-        Reason::LowBattery => "battery low",
-        Reason::Searching => "searching",
-        Reason::UserIdle => "you are away",
-        Reason::Default => "",
-    };
-    if why.is_empty() {
-        format!("Schedule: {state}")
-    } else {
-        format!("Schedule: {state} ({why})")
-    }
-}
-
+/// Shows the Air-Gap state in the tray and tells every window, so no indicator goes stale.
 pub fn set_tray_air_gap<R: Runtime>(app: &AppHandle<R>, on: bool) {
+    let _ = app.emit(AIR_GAP_EVENT, on);
     if let Some(tray) = app.try_state::<Tray<R>>() {
         let _ = tray
             .air_gap
-            .set_text(if on { "Air-Gap: On" } else { "Air-Gap: Off" });
-    }
-}
-
-fn index_label(progress: Option<IndexProgress>) -> String {
-    let Some(p) = progress else {
-        return "Indexing not started".into();
-    };
-    let finished = p.done + p.failed;
-    let total = finished + p.queued + p.running;
-    match (p.paused, total > finished) {
-        (true, _) => format!("Indexing paused {finished}/{total}"),
-        (false, true) => format!("Indexing {finished}/{total}"),
-        (false, false) => "Up to date".into(),
+            .set_text(s(lang(), if on { S::AirGapOn } else { S::AirGapOff }));
+        update_tray_state(&tray, |s| s.air_gap = on);
     }
 }
 
@@ -432,22 +533,31 @@ mod tests {
     }
 
     #[test]
-    fn index_label_counts_finished_of_total() {
-        let p = |queued, running, done, failed, paused| IndexProgress {
-            queued,
-            running,
-            done,
-            failed,
+    fn tray_glyph_puts_air_gap_off_first() {
+        let st = |air_gap, paused, indexing| TrayState {
+            air_gap,
             paused,
+            indexing,
         };
-        assert_eq!(index_label(None), "Indexing not started");
-        assert_eq!(index_label(Some(p(5, 2, 10, 1, false))), "Indexing 11/18");
-        assert_eq!(
-            index_label(Some(p(5, 0, 3, 0, true))),
-            "Indexing paused 3/8"
-        );
-        assert_eq!(index_label(Some(p(0, 0, 9, 1, false))), "Up to date");
-        assert_eq!(index_label(Some(p(0, 0, 0, 0, false))), "Up to date");
+        assert_eq!(tray_glyph(st(false, true, true)), TrayGlyph::AirGapOff);
+        assert_eq!(tray_glyph(st(true, true, true)), TrayGlyph::Paused);
+        assert_eq!(tray_glyph(st(true, false, true)), TrayGlyph::Indexing);
+        assert_eq!(tray_glyph(st(true, false, false)), TrayGlyph::Idle);
+    }
+
+    #[test]
+    fn tray_glyphs_are_template_pngs() {
+        for g in [
+            TrayGlyph::Idle,
+            TrayGlyph::Indexing,
+            TrayGlyph::Paused,
+            TrayGlyph::AirGapOff,
+        ] {
+            let img = Image::from_bytes(glyph_png(g)).unwrap();
+            assert_eq!((img.width(), img.height()), (36, 36), "{g:?}");
+            // Template: every pixel is black, only alpha varies.
+            assert!(img.rgba().chunks(4).all(|p| p[..3] == [0, 0, 0]), "{g:?}");
+        }
     }
 
     #[test]

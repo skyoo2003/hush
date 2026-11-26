@@ -826,3 +826,38 @@ D3 builds the shared components in `src/ui/` that every screen uses (docs/design
 | happy-dom (dev) | 21.0.4 | MIT | None | DOM for component tests |
 | entities (dev, via happy-dom) | 7.0.1 | BSD-2-Clause | None | Transitive; HTML entity decoding |
 | axe-core (dev) | 4.14.1 | MPL-2.0 | None | Accessibility check of the Components page; never bundled |
+
+## ADR-026. Library shell, Settings window, native menu bar (D5)
+
+- Date: 2026-11-26
+- Status: Accepted
+- Design: docs/design/ia.md
+
+### Context
+
+The main window was one scrolling page of settings panels with no search, no sidebar, and no native menu bar beyond Tauri's default (docs/design/audit.md #12–#14, #28). The app needs a library window, a separate Settings window, a menu bar with the standard Edit items (WKWebView text fields get Undo, Cut, Copy, Paste, and Select All only through them), and a tray icon that shows state.
+
+### Decision
+
+- Three windows: `main` (library), `settings` (new, one instance, its own `settings-window.json` capability), and `quick-search` (unchanged). Settings owns every command that changes state outside a folder: `set_air_gap`, `set_shortcut`, theme, accent, supporter, sponsor links, models, updates, diagnostics, delete all, About. `main` loses those and gains `search`, `open_source`, `copy_citation` for the library's own search (ADR-004's per-window list is superseded by the two capability files).
+- Two new commands. `open_settings(pane)` shows the settings window at a pane (from `main` only). `set_menu_context({ section, folderId, hasSelectedHit, sidebarVisible })` tells Rust what the main window shows, so the menu bar enables the right items. Neither takes a path or returns document data. Rust sends `menu://action` to `main`, `settings://pane` to `settings`, and `settings://air-gap` (a bool) to every window when Air-Gap changes, so the toolbar indicator never goes stale.
+- The menu bar is built in Rust (`desktop/menu.rs`) with the Tauri Menu API. Which items are enabled is a pure function of the context (key window, page, schedule, shortcut), tested without a window. Labels come from `desktop/strings.rs`, English and Korean, picked from the first supported macOS preferred language (`NSLocale.preferredLanguages`, the source WKWebView uses for `navigator.language`). Every key's `match` covers both languages, so a missing translation fails to compile. The tray labels moved to the same table.
+- Export as .locitepack and Copy Masked are in the menu and disabled: `export_pack` returns not implemented and `pii_guard::before_copy` is a no-op (roadmap weeks 9 and 11). Ask, Compare, and Changes are sidebar routes that show a neutral "not in this version yet" note, with no prompt and no date.
+- The tray icon is a template image (black and alpha; macOS tints it) for idle, indexing, paused, and Air-Gap off. Air-Gap off wins, then paused, then indexing. `scripts/make-tray-icons.mjs` draws them from Lucide shapes in WebKit.
+- Window chrome: `titleBarStyle: Overlay`, hidden title, traffic lights at (18, 22), and on `main` Tauri's built-in `windowEffects` (`sidebar`) with a transparent window. Transparent windows need `app.macOSPrivateApi: true`. Locite is not on the Mac App Store (the GPL rules it out), so the private-API restriction costs nothing.
+- Window size and position persist with `tauri-plugin-window-state`, for `main` and `settings` only, and without the visible flag (`desktop::setup` still decides what opens at launch). No window is granted its JS permissions. The sidebar width and the last settings pane are UI geometry kept in `localStorage`; neither is document data (absolute rule 4).
+
+### Consequences
+
+- A compromised main webview can no longer turn Air-Gap off, change the shortcut, or delete the index.
+- The settings webview loads at launch with the other windows, so `settings://pane` reaches it before the first show.
+- `tauri-plugin-window-state` writes `.window-state.json` (geometry only) in the app config folder.
+
+### New dependencies
+
+| Package | Version | License | Network use | Why |
+|---|---|---|---|---|
+| tauri-plugin-window-state | 2.5.0 | Apache-2.0 OR MIT | None | Remember window size and position |
+| tauri feature `macos-private-api` | 2 | Apache-2.0 OR MIT | None | Transparent window for sidebar vibrancy |
+| tauri feature `image-png` | 2 | Apache-2.0 OR MIT | None | Decode the tray template PNGs |
+| objc2-foundation feature `NSLocale` | 0.3 | MIT | None | Preferred languages for menu labels |

@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["image-png", "macos-private-api", "tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -48,6 +48,7 @@ tauri-plugin-dialog = "2"
 qrcode = { version = "0.15", default-features = false, features = ["svg"] }
 # Only restore_update/install are called; its own HTTP client never is (ADR-022).
 tauri-plugin-updater = { version = "2.14.1", default-features = false }
+tauri-plugin-window-state = "2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
@@ -66,7 +67,7 @@ security-framework = "3"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "NSColor", "NSColorSpace"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSCalendar", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSNotification", "NSOperation", "block2", "NSProcessInfo", "NSString", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSCalendar", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSLocale", "NSNotification", "NSOperation", "block2", "NSProcessInfo", "NSString", "NSValue"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage", "CGColorSpace", "CGDataProvider", "CGEventSource", "CGEventTypes"] }
 objc2-vision = { version = "0.3", default-features = false, features = ["std", "objc2-core-graphics", "objc2-core-foundation", "VNRequest", "VNRecognizeTextRequest", "VNRequestHandler", "VNObservation", "VNTypes"] }

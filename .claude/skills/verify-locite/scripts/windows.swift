@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Usage: swift windows.swift <pid>
-// Prints "<label> <onscreen 0|1> <CGWindowID> <width>x<height>" for Locite's two app windows.
-// Labels come from tauri.conf.json: quick-search is the always-on-top one (layer > 0).
+// Prints "<label> <onscreen 0|1> <CGWindowID> <width>x<height>" for Locite's app windows.
+// Labels come from tauri.conf.json: quick-search is the always-on-top one (layer > 0); settings is
+// the only normal window exactly 680 wide (its width is fixed).
 import CoreGraphics
 guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else {
   print("usage: windows.swift <pid>"); exit(2)
@@ -13,5 +14,6 @@ for w in all where (w[kCGWindowOwnerPID as String] as? Int32) == pid {
         let b = w[kCGWindowBounds as String] as? [String: Double] else { continue }
   let layer = w[kCGWindowLayer as String] as? Int ?? 0
   let on = (w[kCGWindowIsOnscreen as String] as? Bool ?? false) ? 1 : 0
-  print("\(layer > 0 ? "quick-search" : "main") \(on) \(w[kCGWindowNumber as String]!) \(Int(b["Width"]!))x\(Int(b["Height"]!))")
+  let label = layer > 0 ? "quick-search" : Int(b["Width"]!) == 680 ? "settings" : "main"
+  print("\(label) \(on) \(w[kCGWindowNumber as String]!) \(Int(b["Width"]!))x\(Int(b["Height"]!))")
 }

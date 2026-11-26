@@ -1,0 +1,40 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings-window",
+  "description": "Settings window: folders, exclude patterns, schedule, Air-Gap, shortcut, theme and accent, sponsor, models, updates, diagnostics, delete all indexes, About.",
+  "windows": [
+    "settings"
+  ],
+  "permissions": [
+    "allow-list-folders",
+    "allow-add-watched-folder",
+    "allow-remove-watched-folder",
+    "allow-set-folder-enabled",
+    "allow-list-failed-documents",
+    "allow-retry-document",
+    "allow-set-exclude-patterns",
+    "allow-get-index-status",
+    "allow-get-schedule",
+    "allow-set-schedule",
+    "allow-get-settings",
+    "allow-set-air-gap",
+    "allow-set-shortcut",
+    "allow-set-supporter",
+    "allow-set-theme",
+    "allow-set-accent",
+    "allow-get-appearance",
+    "allow-open-sponsor",
+    "allow-list-models",
+    "allow-download-model",
+    "allow-cancel-model-download",
+    "allow-import-model-file",
+    "allow-check-for-update",
+    "allow-install-update",
+    "allow-export-diagnostics",
+    "allow-delete-all-indexes",
+    "allow-get-about",
+    "allow-read-legal-text",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

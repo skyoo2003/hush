@@ -91,6 +91,8 @@ function startApp(s: Scenario) {
 		get: () => (lang === "ko" ? "ko-KR" : "en-US"),
 	});
 	root.lang = lang;
+	// Sidebar width and the last settings pane live in localStorage; every state starts clean.
+	localStorage.clear();
 	const f = baseFixture();
 	s.setup?.(f);
 	const ipc = installMockIpc(WINDOWS[s.screen].label, f);
