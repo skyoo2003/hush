@@ -362,6 +362,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         app,
         &[
             &item("search", &s(l, S::Search), true)?,
+            &item("library", &s(l, S::Library), true)?,
             &PredefinedMenuItem::separator(app)?,
             &index,
             &schedule,
@@ -427,6 +428,7 @@ fn on_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "search" => toggle_quick_search(app),
         "settings" => show_settings(app, None),
+        "library" => show_main(app),
         "quit" => app.exit(0),
         "pause" => toggle_pause(app),
         _ => {

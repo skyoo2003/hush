@@ -75,6 +75,8 @@ pub struct Ctx {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Enabled {
     pub quick_search: bool,
+    /// Items that act on what the main window shows. Navigation and Find stay enabled from any
+    /// window, because they bring the main window forward first.
     pub main_items: bool,
     pub copy_citation: bool,
     pub pause: bool,
@@ -106,7 +108,6 @@ const NAV: [(Section, S, &str); 4] = [
 struct Items<R: Runtime> {
     quick_search: MenuItem<R>,
     copy_citation: MenuItem<R>,
-    find: MenuItem<R>,
     sidebar: MenuItem<R>,
     nav: Vec<CheckMenuItem<R>>,
     pause: MenuItem<R>,
@@ -137,7 +138,6 @@ pub fn install<R: Runtime>(
         registered,
     )?;
     let copy_citation = item("copy_citation", S::CopyCitation, None, false)?;
-    let find = item("find", S::Find, Some("CmdOrCtrl+F"), false)?;
     let sidebar = item(
         "toggle_sidebar",
         S::HideSidebar,
@@ -147,7 +147,7 @@ pub fn install<R: Runtime>(
     let nav = NAV
         .iter()
         .map(|(sec, k, accel)| {
-            CheckMenuItem::with_id(app, nav_id(*sec), t(*k), false, false, Some(*accel))
+            CheckMenuItem::with_id(app, nav_id(*sec), t(*k), true, false, Some(*accel))
         })
         .collect::<tauri::Result<Vec<_>>>()?;
     let pause = item("pause", S::PauseIndexing, None, false)?;
@@ -212,7 +212,7 @@ pub fn install<R: Runtime>(
                 false,
             )?,
             &sep()?,
-            &find,
+            &item("find", S::Find, Some("CmdOrCtrl+F"), true)?,
         ],
     )?;
     let mut view_items: Vec<&dyn IsMenuItem<R>> = vec![&sidebar];
@@ -235,6 +235,8 @@ pub fn install<R: Runtime>(
         t(S::Window),
         true,
         &[
+            &item("library", S::Library, Some("CmdOrCtrl+0"), true)?,
+            &sep()?,
             &PredefinedMenuItem::minimize(app, Some(&t(S::Minimize)))?,
             &PredefinedMenuItem::maximize(app, Some(&t(S::Zoom)))?,
             &sep()?,
@@ -266,7 +268,6 @@ pub fn install<R: Runtime>(
         items: Items {
             quick_search,
             copy_citation,
-            find,
             sidebar,
             nav,
             pause,
@@ -312,7 +313,6 @@ fn apply<R: Runtime>(i: &Items<R>, c: &Ctx) {
     let l = lang();
     let _ = i.quick_search.set_enabled(e.quick_search);
     let _ = i.copy_citation.set_enabled(e.copy_citation);
-    let _ = i.find.set_enabled(e.main_items);
     let _ = i.sidebar.set_enabled(e.main_items);
     let visible = c.page.is_none_or(|p| p.sidebar_visible);
     let _ = i.sidebar.set_text(s(
@@ -324,7 +324,6 @@ fn apply<R: Runtime>(i: &Items<R>, c: &Ctx) {
         },
     ));
     for (n, (sec, ..)) in i.nav.iter().zip(NAV) {
-        let _ = n.set_enabled(e.main_items);
         let _ = n.set_checked(c.page.is_some_and(|p| p.section == sec));
     }
     let paused = c.schedule.is_some_and(|s| s.reason == Reason::UserPaused);
@@ -364,6 +363,7 @@ fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "about" => super::show_settings(app, Some(SettingsPane::About)),
         "settings" => super::show_settings(app, None),
+        "library" => super::show_main(app),
         "sponsor" => super::show_settings(app, Some(SettingsPane::Sponsor)),
         "add_folder" => emit_main(app, MenuAction::AddFolder),
         "quick_search" => super::toggle_quick_search(app),

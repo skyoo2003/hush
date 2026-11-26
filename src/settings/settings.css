@@ -169,3 +169,9 @@
 	clip-path: inset(50%);
 	white-space: nowrap;
 }
+
+/* A row with only a control (a text area, a lone button) gives it the full width. */
+.form-row-main > .form-row-control:only-child {
+	flex: 1;
+	justify-content: flex-start;
+}

@@ -15,6 +15,7 @@ const ROWS: readonly [MessageKey, ShortcutKeys][] = [
 	["shortcuts.addFolder", { meta: true, key: "o" }],
 	["shortcuts.sidebar", { ctrl: true, meta: true, key: "s" }],
 	["shortcuts.fullScreen", { ctrl: true, meta: true, key: "f" }],
+	["shortcuts.library", { meta: true, key: "0" }],
 	["shortcuts.settings", { meta: true, key: "," }],
 	["shortcuts.help", { meta: true, key: "/" }],
 	["shortcuts.close", { meta: true, key: "w" }],

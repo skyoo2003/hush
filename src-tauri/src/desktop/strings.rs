@@ -97,6 +97,7 @@ pub enum S {
     ScheduleNotStarted,
     SponsorSubmenu,
     IndexingPaused,
+    Library,
 }
 
 pub fn s(lang: Lang, key: S) -> String {
@@ -204,6 +205,8 @@ pub fn s(lang: Lang, key: S) -> String {
         (S::SponsorSubmenu, Ko) => "후원",
         (S::IndexingPaused, En) => "Indexing paused",
         (S::IndexingPaused, Ko) => "색인 멈춤",
+        (S::Library, En) => "Library",
+        (S::Library, Ko) => "라이브러리",
     };
     text.into()
 }
