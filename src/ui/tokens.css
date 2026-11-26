@@ -142,7 +142,9 @@
 	/* Accent as small text (chip numbers, text buttons): pulled toward the text color so it reads
 	 * at 4.5:1 in every theme and with the system accents, which are tuned for fills. */
 	--accent-text: color-mix(in srgb, var(--accent) 65%, var(--fg-primary));
-	--focus-ring: color-mix(in srgb, var(--accent) 55%, transparent);
+	/* Opaque and text-tuned: a 55% accent ring measured 2.2:1 (light) and 1.8:1 (dark); a ring
+	 * needs 3:1 against the surface (WCAG 1.4.11). check-contrast.ts checks it. */
+	--focus-ring: var(--accent-text);
 	--success: var(--prim-green-l);
 	--warning: var(--prim-amber-l);
 	--danger: var(--prim-red-l);
