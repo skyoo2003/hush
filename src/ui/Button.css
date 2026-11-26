@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Bezel shared by Button, IconButton, Select's pop-up button, and Stepper's arrows. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-4);
+	height: 24px;
+	padding: 0 var(--space-8);
+	border: 1px solid transparent;
+	border-radius: var(--radius-control);
+	background: transparent;
+	color: var(--fg-primary);
+	font-size: var(--text-body-size);
+	line-height: var(--text-body-line);
+	white-space: nowrap;
+	transition:
+		background-color var(--duration-fast) var(--ease-out),
+		border-color var(--duration-fast) var(--ease-out),
+		color var(--duration-fast) var(--ease-out);
+}
+
+.btn-small {
+	height: 20px;
+	padding: 0 var(--space-8);
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+}
+
+.btn-primary {
+	background: var(--accent);
+	color: var(--fg-on-accent);
+}
+/* Small steps: in dark the mix lightens the fill, and white text needs 4.5:1 on it. */
+.btn-primary:not(:disabled):is(:hover, [data-demo="hover"]) {
+	background: color-mix(in srgb, var(--accent) 95%, var(--fg-primary));
+}
+.btn-primary:not(:disabled):is(:active, [data-demo="pressed"]) {
+	background: color-mix(in srgb, var(--accent) 90%, var(--fg-primary));
+}
+
+/* Secondary bezel; also the look of a disabled primary and of a primary in an inactive window. */
+.btn-secondary,
+.btn-destructive,
+.btn-primary:disabled,
+[data-window="inactive"] .btn-primary {
+	background: var(--bg-elevated);
+	border-color: var(--border-subtle);
+	color: var(--fg-primary);
+}
+.btn-secondary:not(:disabled):is(:hover, [data-demo="hover"]),
+.btn-destructive:not(:disabled):is(:hover, [data-demo="hover"]),
+[data-window="inactive"]
+	.btn-primary:not(:disabled):is(:hover, [data-demo="hover"]) {
+	background: var(--bg-hover);
+}
+.btn-secondary:not(:disabled):is(:active, [data-demo="pressed"]),
+.btn-destructive:not(:disabled):is(:active, [data-demo="pressed"]),
+.btn-plain:not(:disabled):is(:active, [data-demo="pressed"]),
+[data-window="inactive"]
+	.btn-primary:not(:disabled):is(:active, [data-demo="pressed"]) {
+	background: color-mix(in srgb, var(--fg-primary) 14%, var(--bg-elevated));
+}
+
+/* Red text on the bezel, as macOS draws destructive actions: a red fill fails contrast in dark. */
+.btn-destructive {
+	color: var(--danger);
+}
+/* The pressed bezel is darker in light and lighter in dark; pull the red toward the text color. */
+.btn-destructive:not(:disabled):is(:active, [data-demo="pressed"]) {
+	color: color-mix(in srgb, var(--danger) 70%, var(--fg-primary));
+}
+
+.btn-plain:not(:disabled):is(:hover, [data-demo="hover"]) {
+	background: var(--bg-hover);
+}
+
+.btn:disabled {
+	color: var(--fg-tertiary);
+}

@@ -242,6 +242,21 @@ const en = {
   "about.showLicense": "Show the full license text",
   "about.showNotices": "Show third-party notices",
   "about.readFailed": "Could not read this text.",
+  "airgap.on": "Air-Gap On",
+  "airgap.off": "Air-Gap Off",
+  "evidence.strong": "Strong evidence",
+  "evidence.weak": "Weak evidence",
+  "evidence.none": "No evidence",
+  "answer.notFound": "Not found in your local documents",
+  "answer.aiLabel": "AI summary — check the sources",
+  "pii.count": "{count} personal details masked",
+  "ui.dismiss": "Dismiss",
+  "ui.close": "Close",
+  "ui.clear": "Clear",
+  "ui.increment": "Increase",
+  "ui.decrement": "Decrease",
+  "ui.resize": "Resize sidebar",
+  "ui.notifications": "Notifications",
 };
 
 export type MessageKey = keyof typeof en;
@@ -495,6 +510,22 @@ const ko: Record<MessageKey, string> = {
   "about.showLicense": "라이선스 전문 보기",
   "about.showNotices": "서드파티 고지 보기",
   "about.readFailed": "이 내용을 읽지 못했습니다.",
+  "airgap.on": "에어갭 켜짐",
+  "airgap.off": "에어갭 꺼짐",
+  "evidence.strong": "근거 충분",
+  "evidence.weak": "근거 약함",
+  "evidence.none": "근거 없음",
+  // Exact wording required by CLAUDE.md absolute rule 7.
+  "answer.notFound": "제공된 로컬 문서에서 확인되지 않음",
+  "answer.aiLabel": "AI 요약 — 출처를 확인하세요",
+  "pii.count": "개인정보 {count}건 가림",
+  "ui.dismiss": "닫기",
+  "ui.close": "닫기",
+  "ui.clear": "지우기",
+  "ui.increment": "늘리기",
+  "ui.decrement": "줄이기",
+  "ui.resize": "사이드바 크기 조절",
+  "ui.notifications": "알림",
 };
 
 export const locale = globalThis.navigator?.language ?? "en";

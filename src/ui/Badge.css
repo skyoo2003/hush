@@ -1,0 +1,42 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	height: 16px;
+	min-width: 16px;
+	padding: 0 var(--space-4);
+	justify-content: center;
+	border-radius: 8px;
+	font-family: var(--font-mono);
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.badge-neutral {
+	background: var(--bg-hover);
+	color: var(--fg-secondary);
+}
+/* Solid: accent text on an accent tint is too faint in dark themes. */
+.badge-accent {
+	background: var(--accent);
+	color: var(--fg-on-accent);
+}
+[data-window="inactive"] .badge-accent {
+	background: var(--bg-selected-inactive);
+	color: var(--fg-primary);
+}
+/* 12%: a 16% tint drops 11px status text under 4.5:1 in light. */
+.badge-success {
+	background: color-mix(in srgb, var(--success) 12%, var(--bg-content));
+	color: var(--success);
+}
+.badge-warning {
+	background: color-mix(in srgb, var(--warning) 12%, var(--bg-content));
+	color: var(--warning);
+}
+.badge-danger {
+	background: color-mix(in srgb, var(--danger) 12%, var(--bg-content));
+	color: var(--danger);
+}

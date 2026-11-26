@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv, type Plugin } from "vite";
 
 // UI harness (src/dev): with VITE_MOCK_IPC=1 the dev server runs src/dev/boot.tsx before main.tsx,
@@ -26,4 +27,5 @@ export default defineConfig(({ mode }) => ({
     watch: { ignored: ["**/src-tauri/**"] },
   },
   build: { target: "safari15" },
+  test: { setupFiles: ["src/ui/test-setup.ts"] },
 }));

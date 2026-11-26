@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.split-view {
+	display: grid;
+	height: 100%;
+	min-height: 0;
+}
+
+.split-view-pane {
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.split-view-divider {
+	position: relative;
+	z-index: 1;
+	background: var(--border-subtle);
+	touch-action: none;
+}
+
+/* A wider invisible hit area over the 1px hairline. */
+.split-view-divider::before {
+	content: "";
+	position: absolute;
+	inset: 0 -4px;
+	cursor: col-resize;
+}

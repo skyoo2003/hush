@@ -12,11 +12,24 @@ export type Lang = (typeof LANGS)[number];
 export const THEMES = ["light", "dark"] as const;
 
 /** Real window sizes from tauri.conf.json and desktop.rs. "tokens" is the harness's own page
- * (TokensPage.tsx), tall enough for every token and with no strings to translate. */
+ * (TokensPage.tsx), tall enough for every token and with no strings to translate. "components" and
+ * "components-overlays" are ComponentsPage.tsx: every component, and one open overlay per state. */
 export const WINDOWS = {
-	"quick-search": { label: "quick-search", width: 680, height: 460, langs: LANGS },
+	"quick-search": {
+		label: "quick-search",
+		width: 680,
+		height: 460,
+		langs: LANGS,
+	},
 	main: { label: "main", width: 1080, height: 720, langs: LANGS },
 	tokens: { label: "main", width: 1080, height: 1960, langs: ["en"] },
+	components: { label: "main", width: 1080, height: 3800, langs: LANGS },
+	"components-overlays": {
+		label: "main",
+		width: 1080,
+		height: 720,
+		langs: LANGS,
+	},
 } as const;
 export type Screen = keyof typeof WINDOWS;
 
@@ -27,6 +40,8 @@ export type Step =
 	| { select: string; value: string }
 	| { key: string; meta?: boolean }
 	| { scroll: string }
+	| { focus: string }
+	| { context: string }
 	| { wait: string };
 
 export type Scenario = {
@@ -77,6 +92,20 @@ const tokens = (theme: Theme, accent: Accent, note: string): Scenario => ({
 		f.settings.accent = accent;
 	},
 });
+// Components page: everything in one state; each overlay opened by its trigger (ids in ComponentsPage).
+const overlay = (
+	state: string,
+	note: string,
+	open: Step[],
+	wait: string,
+): Scenario => ({
+	screen: "components-overlays",
+	state,
+	note,
+	steps: [...open, { wait }],
+});
+const keyOpen = (id: string): Step[] => [{ focus: id }, { key: "Enter" }];
+
 export const SCENARIOS: Scenario[] = [
 	// Quick search
 	{ screen: "quick-search", state: "empty", note: "Just opened: hint only" },
@@ -498,6 +527,67 @@ export const SCENARIOS: Scenario[] = [
 		state: "increase-contrast",
 		note: "prefers-contrast: more",
 	},
+	{
+		screen: "components",
+		state: "all",
+		note: "Every component × state, light and dark; Smart Folders collapsed",
+		steps: [
+			{
+				click:
+					".cp-sidebar .sidebar-section:last-child .sidebar-section-trigger",
+			},
+			{ wait: ".cp-sidebar [data-state=closed]" },
+		],
+	},
+	overlay(
+		"popover",
+		"Popover with arrow",
+		[{ click: "#ov-popover" }],
+		"[role=dialog]",
+	),
+	overlay(
+		"menu",
+		"Dropdown menu, opened by keyboard",
+		keyOpen("#ov-menu"),
+		"[role=menu]",
+	),
+	overlay(
+		"context-menu",
+		"Context menu on a right-click",
+		[{ context: "#ov-context" }],
+		"[role=menu]",
+	),
+	overlay(
+		"select",
+		"Pop-up button menu",
+		keyOpen("#ov-select"),
+		"[role=listbox]",
+	),
+	overlay(
+		"tooltip",
+		"Source chip excerpt on focus",
+		[{ focus: "#ov-tooltip" }],
+		"[role=tooltip]",
+	),
+	overlay(
+		"sheet",
+		"Sheet under the toolbar",
+		[{ click: "#ov-sheet" }],
+		"[role=dialog]",
+	),
+	overlay(
+		"alert",
+		"Alert, Return confirms",
+		[{ click: "#ov-alert" }],
+		"[role=alertdialog]",
+	),
+	overlay(
+		"alert-destructive",
+		"Destructive alert, focus starts on Cancel",
+		[{ click: "#ov-alert-destructive" }],
+		"[role=alertdialog]",
+	),
+	overlay("toast", "Toast with an action", [{ click: "#ov-toast" }], ".toast"),
 ];
 
 export const scenario = (screen: string | null, state: string | null) =>

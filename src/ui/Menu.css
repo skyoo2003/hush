@@ -1,0 +1,65 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Menu and ContextMenu: the macOS menu look. */
+.menu {
+	min-width: 180px;
+	padding: var(--space-4);
+	background: var(--bg-elevated);
+	color: var(--fg-primary);
+	border-radius: var(--radius-card);
+	box-shadow: var(--shadow-popover);
+	transform-origin: var(
+		--radix-dropdown-menu-content-transform-origin,
+		var(--radix-context-menu-content-transform-origin)
+	);
+	z-index: 50;
+}
+.menu[data-state="open"] {
+	animation: overlay-in var(--duration-fast) var(--ease-out);
+}
+.menu[data-state="closed"] {
+	animation: overlay-out var(--duration-fast) var(--ease-out);
+}
+
+.menu-item {
+	display: flex;
+	align-items: center;
+	gap: var(--space-4);
+	height: 22px;
+	padding: 0 var(--space-8) 0 var(--space-4);
+	border-radius: var(--radius-control);
+	outline: none;
+}
+.menu-item:is([data-highlighted], [data-demo="hover"]) {
+	background: var(--accent);
+	color: var(--fg-on-accent);
+}
+.menu-item[data-destructive]:not([data-highlighted], [data-demo="hover"]) {
+	color: var(--danger);
+}
+.menu-item[data-disabled] {
+	color: var(--fg-tertiary);
+}
+
+.menu-icon {
+	display: inline-flex;
+	width: 16px;
+	justify-content: center;
+	flex: none;
+}
+.menu-label {
+	flex: 1;
+	white-space: nowrap;
+}
+.menu-shortcut {
+	margin-left: var(--space-16);
+	color: var(--fg-tertiary);
+}
+.menu-item:is([data-highlighted], [data-demo="hover"]) .menu-shortcut {
+	color: inherit;
+}
+
+.menu-separator {
+	height: 1px;
+	margin: var(--space-4) var(--space-8);
+	background: var(--border-subtle);
+}

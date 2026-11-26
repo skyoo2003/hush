@@ -1,0 +1,70 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.searchfield {
+	display: flex;
+	align-items: center;
+	gap: var(--space-4);
+	padding: 0 var(--space-4) 0 var(--space-8);
+	min-width: 0;
+}
+.searchfield-small {
+	height: 20px;
+}
+
+/* The ring goes on the whole box, not on the input inside it. */
+.searchfield:is(:focus-within, :has([data-demo="focus"])) {
+	outline: var(--focus-ring-width) solid var(--focus-ring);
+	outline-offset: 1px;
+}
+.searchfield-input:focus,
+.searchfield-input[data-demo="focus"] {
+	outline: none;
+}
+
+.searchfield-icon {
+	flex: none;
+	color: var(--fg-secondary);
+}
+
+.searchfield-input {
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--fg-primary);
+	font-size: var(--text-body-size);
+	line-height: var(--text-body-line);
+	appearance: none;
+}
+.searchfield-small .searchfield-input {
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+}
+.searchfield-input::placeholder {
+	color: var(--fg-tertiary);
+}
+/* WebKit's own cancel button; ours replaces it. */
+.searchfield-input::-webkit-search-cancel-button {
+	appearance: none;
+}
+.searchfield-input:disabled {
+	color: var(--fg-tertiary);
+}
+
+.searchfield-clear {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: var(--fg-tertiary);
+	color: var(--bg-content);
+}
+.searchfield-clear:is(:hover, [data-demo="hover"]) {
+	background: var(--fg-secondary);
+}

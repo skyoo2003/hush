@@ -4,7 +4,7 @@
 // embedding models in the catalog (models/licenses/). The app compiles in the copy at the repository root.
 // Usage: node scripts/third-party-notices.mjs <out-file>. Needs scripts/fetch-pdfium.sh and fetched crates.
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const out = process.argv[2];
@@ -47,10 +47,15 @@ const pkgs = Object.values(npm)
   .sort((a, b) => a.name.localeCompare(b.name));
 for (const p of pkgs) {
   for (const dir of p.paths) {
-    const files = readdirSync(dir).filter((f) => /^(licen[cs]e|copying|notice)/i.test(f));
+    // A package that ships no license file gets the upstream text from scripts/npm-licenses/<name>.txt.
+    const files = readdirSync(dir)
+      .filter((f) => /^(licen[cs]e|copying|notice)/i.test(f))
+      .map((f) => join(dir, f));
+    const fallback = join(root, "scripts", "npm-licenses", `${p.name}.txt`);
+    if (files.length === 0 && existsSync(fallback)) files.push(fallback);
     if (files.length === 0) throw new Error(`third-party-notices: no license file in ${p.name}`);
     parts.push(`${"-".repeat(80)}\n${p.name} ${p.versions.join(", ")} (${p.license})\n`);
-    for (const f of files.sort()) parts.push(`${read(join(dir, f))}\n`);
+    for (const f of files.sort()) parts.push(`${read(f)}\n`);
   }
 }
 

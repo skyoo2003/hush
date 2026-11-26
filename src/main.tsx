@@ -7,10 +7,12 @@ import "./ui/tokens.css";
 import "./ui/base.css";
 import "./app.css";
 import { startAppearance } from "./ui/appearance";
+import { trackWindowFocus } from "./ui/window";
 
 document.title = APP_NAME;
 // On failure the window keeps the CSS defaults: system theme, the app's own accent.
 startAppearance().catch(() => {});
+trackWindowFocus();
 
 const root = document.getElementById("root");
 if (root) {

@@ -1,0 +1,51 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.stepper {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-4);
+}
+
+.stepper-input {
+	width: 64px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+.stepper-small .stepper-input {
+	height: 20px;
+	font-size: var(--text-subheadline-size);
+	line-height: var(--text-subheadline-line);
+}
+
+.stepper-arrows {
+	display: inline-flex;
+	flex-direction: column;
+	height: 24px;
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-control);
+	background: var(--bg-elevated);
+	overflow: hidden;
+}
+.stepper-small .stepper-arrows {
+	height: 20px;
+}
+
+.stepper-arrow {
+	display: inline-flex;
+	flex: 1;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--fg-primary);
+}
+.stepper-arrow + .stepper-arrow {
+	border-top: 1px solid var(--border-subtle);
+}
+.stepper-arrow:not(:disabled):is(:active, [data-demo="pressed"]) {
+	background: color-mix(in srgb, var(--fg-primary) 14%, var(--bg-elevated));
+}
+.stepper-arrow:disabled {
+	color: var(--fg-tertiary);
+}

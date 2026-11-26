@@ -1,0 +1,96 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+.list {
+	display: flex;
+	flex-direction: column;
+	padding: var(--space-4);
+	overflow-y: auto;
+	background: var(--bg-content);
+}
+
+.list-option {
+	border-radius: var(--radius-control);
+	color: var(--fg-primary);
+}
+
+.list-option[aria-selected="true"] {
+	background: var(--bg-selected);
+	color: var(--fg-on-accent);
+}
+
+[data-window="inactive"] .list-option[aria-selected="true"] {
+	background: var(--bg-selected-inactive);
+	color: var(--fg-primary);
+}
+
+.list-row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	padding: 0 var(--space-8);
+}
+
+.list-dense .list-row {
+	height: 28px;
+}
+
+.list-two-line .list-row {
+	min-height: 44px;
+	padding-block: var(--space-4);
+}
+
+.list-row-icon {
+	flex: none;
+	width: 16px;
+	height: 16px;
+}
+
+.list-dense .list-row-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.list-row-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.list-row-title,
+.list-row-subtitle {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.list-row-subtitle {
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+	color: var(--fg-secondary);
+}
+
+/* shortcut: no --fg-on-accent-tinted token yet; replace the mix once tokens.css has one. 90% is
+ * the lowest that keeps 4.5:1 on the brand accent. */
+.list-option[aria-selected="true"] .list-row-subtitle {
+	color: color-mix(in srgb, var(--fg-on-accent) 90%, transparent);
+}
+
+[data-window="inactive"] .list-option[aria-selected="true"] .list-row-subtitle {
+	color: var(--fg-secondary);
+}
+
+.list-row-trailing {
+	flex: none;
+	color: var(--fg-tertiary);
+	font-size: var(--text-callout-size);
+	line-height: var(--text-callout-line);
+}
+
+.list-option[aria-selected="true"] .list-row-trailing {
+	color: inherit;
+}
+
+/* Tertiary text is too faint on the gray selection. */
+[data-window="inactive"] .list-option[aria-selected="true"] .list-row-trailing {
+	color: var(--fg-secondary);
+}
